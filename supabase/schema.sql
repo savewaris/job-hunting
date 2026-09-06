@@ -91,6 +91,24 @@ CREATE TABLE IF NOT EXISTS public.offers (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- 7. Cold Email Queue Table
+CREATE TABLE IF NOT EXISTS public.cold_emails (
+  id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+  job_application_id UUID REFERENCES public.job_applications(id) ON DELETE SET NULL,
+  company_name TEXT NOT NULL,
+  job_title TEXT,
+  recipient_name TEXT,
+  recipient_role TEXT,
+  recipient_email TEXT,
+  subject TEXT NOT NULL,
+  body TEXT NOT NULL,
+  status TEXT DEFAULT 'draft', -- draft, reviewed, sent
+  sent_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- Enable Row Level Security (RLS)
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.job_applications ENABLE ROW LEVEL SECURITY;
@@ -98,6 +116,7 @@ ALTER TABLE public.master_profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tailored_documents ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.interviews ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.offers ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.cold_emails ENABLE ROW LEVEL SECURITY;
 
 -- RLS Policies
 CREATE POLICY "Users can manage their own profile" ON public.profiles FOR ALL USING (auth.uid() = id);
@@ -106,3 +125,5 @@ CREATE POLICY "Users can manage their master profile" ON public.master_profiles 
 CREATE POLICY "Users can manage their tailored docs" ON public.tailored_documents FOR ALL USING (auth.uid() = user_id);
 CREATE POLICY "Users can manage their interviews" ON public.interviews FOR ALL USING (auth.uid() = user_id);
 CREATE POLICY "Users can manage their offers" ON public.offers FOR ALL USING (auth.uid() = user_id);
+CREATE POLICY "Users can manage their cold emails" ON public.cold_emails FOR ALL USING (auth.uid() = user_id);
+

@@ -86,3 +86,37 @@ export interface JobOffer {
   deadline?: string;
   status: 'pending' | 'accepted' | 'declined' | 'negotiating';
 }
+
+export interface ColdEmail {
+  id: string;
+  jobApplicationId?: string;
+  companyName: string;
+  jobTitle?: string;
+  recipientName: string;
+  recipientRole: string;
+  recipientEmail: string;
+  subject: string;
+  body: string;
+  status: 'draft' | 'reviewed' | 'sent';
+  sentAt?: string;
+  createdAt: string;
+  tailoredHighlights?: string[];
+}
+
+export type ScraperSource = 'all' | 'greenhouse' | 'lever' | 'ashby' | 'remoteok' | 'arbeitnow';
+
+export interface ScrapedJob {
+  id: string;
+  companyName: string;
+  jobTitle: string;
+  jobUrl: string;
+  location: string;
+  jobType: 'Full-time' | 'Remote' | 'Contract' | 'Hybrid';
+  salaryRange?: string;
+  jobDescription: string;
+  requirements: string[];
+  source: 'remoteok' | 'arbeitnow' | 'greenhouse' | 'lever' | 'ashby' | 'custom';
+  matchScore: number;
+  createdAt: string;
+}
+

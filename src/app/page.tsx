@@ -1,8 +1,34 @@
 'use client';
 
-import React, { useState } from 'react';
-import { JobApplication, JobStatus, MasterProfile, Interview, JobOffer } from '@/types';
-import { INITIAL_APPLICATIONS, MOCK_MASTER_PROFILE, MOCK_INTERVIEWS, MOCK_OFFERS } from '@/lib/mockData';
+import React, { useState, useEffect } from 'react';
+import { 
+  JobApplication, 
+  JobStatus, 
+  MasterProfile, 
+  Interview, 
+  JobOffer, 
+  ColdEmail 
+} from '@/types';
+import { 
+  INITIAL_APPLICATIONS, 
+  MOCK_MASTER_PROFILE, 
+  MOCK_INTERVIEWS, 
+  MOCK_OFFERS, 
+  INITIAL_COLD_EMAILS 
+} from '@/lib/mockData';
+import { 
+  fetchJobApplications, 
+  createJobApplication, 
+  updateJobApplicationStatus, 
+  deleteJobApplicationFromDb,
+  fetchMasterProfile,
+  saveMasterProfileToDb,
+  fetchInterviews,
+  fetchOffers,
+  fetchColdEmails,
+  saveColdEmailToDb,
+  deleteColdEmailFromDb
+} from '@/lib/db';
 import { Navbar } from '@/components/layout/Navbar';
 import { KanbanBoard } from '@/components/tracker/KanbanBoard';
 import { JobImportModal } from '@/components/tracker/JobImportModal';
@@ -10,36 +36,71 @@ import { ResumeCustomizer } from '@/components/ai/ResumeCustomizer';
 import { AnalyticsDashboard } from '@/components/analytics/AnalyticsDashboard';
 import { InterviewCalendar } from '@/components/interviews/InterviewCalendar';
 import { OfferCalculator } from '@/components/offers/OfferCalculator';
+import { ProfileEditor } from '@/components/profile/ProfileEditor';
+import { ColdEmailQueue } from '@/components/outreach/ColdEmailQueue';
+import { JobScraperPanel } from '@/components/scraper/JobScraperPanel';
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState<string>('tracker');
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
 
-  // Application Pipeline State
+  // Application Pipeline State (Hydrated from Supabase where env vars exist)
   const [applications, setApplications] = useState<JobApplication[]>(INITIAL_APPLICATIONS);
   const [masterProfile, setMasterProfile] = useState<MasterProfile>(MOCK_MASTER_PROFILE);
   const [interviews, setInterviews] = useState<Interview[]>(MOCK_INTERVIEWS);
   const [offers, setOffers] = useState<JobOffer[]>(MOCK_OFFERS);
+  const [coldEmails, setColdEmails] = useState<ColdEmail[]>(INITIAL_COLD_EMAILS);
 
   const [selectedAppForTailoring, setSelectedAppForTailoring] = useState<JobApplication | null>(null);
 
-  // Pipeline Handlers
-  const handleUpdateStatus = (id: string, newStatus: JobStatus) => {
+  // Acceptance Criteria 7: mockData.ts reads replaced with real Supabase queries where env vars exist
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadDataFromSupabase() {
+      try {
+        const [loadedApps, loadedProfile, loadedInterviews, loadedOffers, loadedEmails] = await Promise.all([
+          fetchJobApplications(),
+          fetchMasterProfile(),
+          fetchInterviews(),
+          fetchOffers(),
+          fetchColdEmails(),
+        ]);
+
+        if (isMounted) {
+          if (loadedApps && loadedApps.length > 0) setApplications(loadedApps);
+          if (loadedProfile) setMasterProfile(loadedProfile);
+          if (loadedInterviews && loadedInterviews.length > 0) setInterviews(loadedInterviews);
+          if (loadedOffers && loadedOffers.length > 0) setOffers(loadedOffers);
+          if (loadedEmails && loadedEmails.length > 0) setColdEmails(loadedEmails);
+        }
+      } catch (err) {
+        console.warn('Error loading real Supabase data, utilizing safe initial state:', err);
+      }
+    }
+
+    loadDataFromSupabase();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  // Pipeline Handlers (persists to Supabase job_applications)
+  const handleUpdateStatus = async (id: string, newStatus: JobStatus) => {
     setApplications((prev) =>
       prev.map((app) => (app.id === id ? { ...app, status: newStatus } : app))
     );
+    await updateJobApplicationStatus(id, newStatus);
   };
 
-  const handleDeleteApplication = (id: string) => {
+  const handleDeleteApplication = async (id: string) => {
     setApplications((prev) => prev.filter((app) => app.id !== id));
+    await deleteJobApplicationFromDb(id);
   };
 
-  const handleAddApplication = (newApp: Omit<JobApplication, 'id' | 'createdAt'>) => {
-    const created: JobApplication = {
-      ...newApp,
-      id: `app-${Date.now()}`,
-      createdAt: new Date().toISOString(),
-    };
+  const handleAddApplication = async (newApp: Omit<JobApplication, 'id' | 'createdAt'>) => {
+    const created = await createJobApplication(newApp);
     setApplications((prev) => [created, ...prev]);
   };
 
@@ -48,6 +109,36 @@ export default function Home() {
     setActiveTab('resume');
   };
 
+  // Profile Editor Handler: writes to master_profiles table
+  const handleSaveProfile = async (updatedProfile: MasterProfile) => {
+    setMasterProfile(updatedProfile);
+    return await saveMasterProfileToDb(updatedProfile);
+  };
+
+  // Cold Email Handlers (explicit per-email sending, no automatic background sending)
+  const handleSaveColdEmail = async (email: ColdEmail) => {
+    const saved = await saveColdEmailToDb(email);
+    setColdEmails((prev) => {
+      const idx = prev.findIndex((e) => e.id === saved.id);
+      if (idx !== -1) {
+        const copy = [...prev];
+        copy[idx] = saved;
+        return copy;
+      }
+      return [saved, ...prev];
+    });
+  };
+
+  const handleDeleteColdEmail = async (id: string) => {
+    setColdEmails((prev) => prev.filter((e) => e.id !== id));
+    await deleteColdEmailFromDb(id);
+  };
+
+  const handleSendColdEmail = async (email: ColdEmail) => {
+    await handleSaveColdEmail(email);
+  };
+
+  // Interviews and Offers Handlers
   const handleAddInterview = (newInt: Omit<Interview, 'id'>) => {
     const created: Interview = {
       ...newInt,
@@ -78,6 +169,7 @@ export default function Home() {
       {/* Main Workspace View */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
         
+        {/* Tab 1: Kanban Pipeline Board */}
         {activeTab === 'tracker' && (
           <KanbanBoard
             applications={applications}
@@ -88,10 +180,23 @@ export default function Home() {
           />
         )}
 
-        {activeTab === 'analytics' && (
-          <AnalyticsDashboard applications={applications} />
+        {/* Tab 2: Job Board Scraper Service */}
+        {activeTab === 'scraper' && (
+          <JobScraperPanel
+            onAddApplication={handleAddApplication}
+            existingApplications={applications}
+          />
         )}
 
+        {/* Tab 3: Master Profile Editor (writes to master_profiles) */}
+        {activeTab === 'profile' && (
+          <ProfileEditor
+            profile={masterProfile}
+            onSaveProfile={handleSaveProfile}
+          />
+        )}
+
+        {/* Tab 4: AI Tailored Resumes & Cover Letters */}
         {activeTab === 'resume' && (
           <ResumeCustomizer
             applications={applications}
@@ -100,6 +205,19 @@ export default function Home() {
           />
         )}
 
+        {/* Tab 5: Cold Email Review Queue (Explicit per-email send, no automatic sending) */}
+        {activeTab === 'outreach' && (
+          <ColdEmailQueue
+            emails={coldEmails}
+            applications={applications}
+            masterProfile={masterProfile}
+            onSaveEmail={handleSaveColdEmail}
+            onDeleteEmail={handleDeleteColdEmail}
+            onSendEmail={handleSendColdEmail}
+          />
+        )}
+
+        {/* Tab 6: Interview Calendar */}
         {activeTab === 'interviews' && (
           <InterviewCalendar
             interviews={interviews}
@@ -108,12 +226,18 @@ export default function Home() {
           />
         )}
 
+        {/* Tab 7: Offer Calculator */}
         {activeTab === 'offers' && (
           <OfferCalculator
             offers={offers}
             applications={applications}
             onAddOffer={handleAddOffer}
           />
+        )}
+
+        {/* Tab 8: Analytics & Conversion Funnel */}
+        {activeTab === 'analytics' && (
+          <AnalyticsDashboard applications={applications} />
         )}
 
       </main>
@@ -132,7 +256,9 @@ export default function Home() {
           <div className="flex items-center space-x-4">
             <span className="hover:text-slate-400 cursor-pointer">Supabase DB Sync Ready</span>
             <span>•</span>
-            <span className="hover:text-slate-400 cursor-pointer">Google Gemini AI Engine</span>
+            <span className="hover:text-slate-400 cursor-pointer">Shared AI Battery Fallback Engine</span>
+            <span>•</span>
+            <span className="hover:text-slate-400 cursor-pointer">Human-in-the-Loop Outreach</span>
           </div>
         </div>
       </footer>
