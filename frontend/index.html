@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Facebook Session & Cookie Storage Manager - Job Hunting Suite">
+    <title>Facebook Session & Cookie Storage - Job Hunting</title>
+    <!-- Modern Typography: Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header>
+            <div class="logo-area">
+                <div class="logo-icon">f</div>
+                <h1>Facebook Session & Cookie Storage</h1>
+            </div>
+            <div class="ws-status">
+                <div class="status-dot" id="wsDot"></div>
+                <span id="wsStatusText">Connecting WS...</span>
+            </div>
+        </header>
+
+        <!-- Card: Session & Authentication -->
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title">🔑 Facebook Session & Auth</h2>
+            </div>
+            <p style="font-size: 0.85rem; color: var(--text-muted);">
+                Choose any method below to connect your Facebook session:
+            </p>
+            <div class="btn-group">
+                <button class="btn btn-secondary" id="btnStatus">🔍 Check Session Status</button>
+                <button class="btn btn-primary" id="btnLogin">🌐 Launch Chrome Login Window</button>
+                <button class="btn btn-secondary" id="btnToggleImport">📋 Paste / Import Cookies</button>
+            </div>
+            
+            <!-- Quick Import Box -->
+            <div id="importBox" style="display: none; background: rgba(15,23,42,0.6); padding: 1rem; border-radius: 0.75rem; border: 1px solid var(--card-border); gap: 0.75rem; flex-direction: column;">
+                <label style="font-size: 0.8rem; color: var(--text-muted); font-weight: 600;">
+                    Paste Cookie String (e.g. <code>c_user=1000...; xs=2%3A...</code>) or JSON Array:
+                </label>
+                <textarea id="cookieInputText" placeholder="Paste your Facebook cookies here (from Cookie-Editor, DevTools, or copy string)..." style="height: 90px; font-family: monospace; font-size: 0.8rem;"></textarea>
+                <div style="display: flex; gap: 0.5rem;">
+                    <button class="btn btn-primary" id="btnSubmitImport" style="padding: 0.5rem 1rem; font-size: 0.8rem;">💾 Save & Verify Cookies</button>
+                    <button class="btn btn-secondary" id="btnCancelImport" style="padding: 0.5rem 1rem; font-size: 0.8rem;">Cancel</button>
+                </div>
+            </div>
+
+            <div id="sessionResult" style="font-size: 0.85rem; padding: 0.5rem; border-radius: 0.375rem; background: rgba(15,23,42,0.5); display: none;"></div>
+        </div>
+
+        <!-- Terminal Log Widget -->
+        <div class="card terminal-card">
+            <div class="terminal-header">
+                <h2 class="card-title">💻 Live Automation Terminal Logs</h2>
+                <button class="btn btn-secondary" id="btnClearLogs" style="padding: 0.375rem 0.75rem; font-size: 0.75rem;">Clear Logs</button>
+            </div>
+            <div class="terminal-body" id="terminalBody">
+                <div class="log-entry">
+                    <span class="log-time">[Init]</span>
+                    <span class="log-type info">INFO</span>
+                    <span class="log-msg">Dashboard ready. Establishing WebSocket connection to backend...</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Client JS (ES Module) -->
+    <script type="module" src="app.js"></script>
+</body>
+</html>

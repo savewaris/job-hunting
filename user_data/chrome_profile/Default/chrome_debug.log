@@ -1,0 +1,15 @@
+[0817/181508.473:INFO:CONSOLE:60] "Canvas2D: Multiple readback operations using getImageData are faster with the willReadFrequently attribute set to true. See: https://html.spec.whatwg.org/multipage/canvas.html#concept-canvas-will-read-frequently", source: https://static.xx.fbcdn.net/rsrc.php/v4/yd/r/QpQ4ZveDLN4.js (60)
+[0817/181508.520:INFO:CONSOLE:84] "ErrorUtils caught an error:
+
+Error connecting to Credential Management service.
+
+Subsequent non-fatal errors won't be logged; see https://fburl.com/debugjs. [object Object]", source: https://static.xx.fbcdn.net/rsrc.php/v4/yD/r/pwR47Z3NJfs.js (84)
+[0817/181508.523:INFO:CONSOLE:0] "[.WebGL-0xda40017b400]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels", source: https://www.facebook.com/ (0)
+[0817/181508.530:INFO:CONSOLE:251] "
+%cหยุด! font-family:helvetica; font-size:20px; font-size:50px; font-weight:bold; color:red; -webkit-text-stroke:1px black;", source: https://static.xx.fbcdn.net/rsrc.php/v4/yD/r/pwR47Z3NJfs.js (251)
+[0817/181508.530:INFO:CONSOLE:251] "
+%cฟีเจอร์นี้เป็นฟีเจอร์ของเบราว์เซอร์ที่มีจุดมุ่งหมายให้ใช้สำหรับผู้พัฒนา หากผู้ใดบอกให้คุณคัดลอกแล้ววางข้อความบางอย่างที่นี่เพื่อเปิดใช้งานฟีเจอร์บน Facebook หรือเพื่อ "แฮ็ก" บัญชีของผู้อื่น คำบอกกล่าวเช่นนี้เป็นการหลอกลวงและจะทำให้ผู้นั้นมีสิทธิ์เข้าถึงบัญชี Facebook ของคุณ font-family:helvetica; font-size:20px; ", source: https://static.xx.fbcdn.net/rsrc.php/v4/yD/r/pwR47Z3NJfs.js (251)
+[0817/181508.530:INFO:CONSOLE:251] "
+%cดูข้อมูลเพิ่มเติมได้ที่ https://www.facebook.com/selfxss font-family:helvetica; font-size:20px; ", source: https://static.xx.fbcdn.net/rsrc.php/v4/yD/r/pwR47Z3NJfs.js (251)
+[0817/181508.530:INFO:CONSOLE:251] "
+%c ", source: https://static.xx.fbcdn.net/rsrc.php/v4/yD/r/pwR47Z3NJfs.js (251)
