@@ -1,4 +1,4 @@
-import { JobApplication, MasterProfile, Interview, JobOffer } from '@/types';
+import { JobApplication, MasterProfile, Interview, JobOffer, ColdEmail } from '@/types';
 
 export const INITIAL_APPLICATIONS: JobApplication[] = [
   {
@@ -174,3 +174,54 @@ export const MOCK_OFFERS: JobOffer[] = [
     status: 'negotiating'
   }
 ];
+
+export const INITIAL_COLD_EMAILS: ColdEmail[] = [
+  {
+    id: 'email-1',
+    jobApplicationId: 'app-1',
+    companyName: 'Stripe',
+    jobTitle: 'Senior Full Stack Engineer',
+    recipientName: 'Sarah Jenkins',
+    recipientRole: 'Engineering Director, Payments Core',
+    recipientEmail: 'sjenkins@stripe.com',
+    subject: 'Senior Full Stack Engineer (Remote) — Alex Waris',
+    body: `Hi Sarah,
+
+I've been following Stripe's developer platform advancements and was excited to see the opening for Senior Full Stack Engineer.
+
+With 6+ years specializing in Next.js, high-throughput TypeScript backend systems, and fault-tolerant architecture, I recently architected a financial tracking platform serving 500k MAU with 99.9% uptime. Given Stripe's commitment to reliability and low-latency systems, I'd love to share how my experience directly aligns with your team's current milestones.
+
+I've attached my tailored resume for your review. Would you be open to a brief 10-minute conversation this Thursday or Friday?
+
+Best regards,
+Alex Waris
+alex.waris@example.com`,
+    status: 'draft',
+    createdAt: '2026-08-02T10:00:00Z',
+    tailoredHighlights: ['High-throughput TypeScript', 'Next.js 99.9% uptime', 'Payment architecture overlap']
+  },
+  {
+    id: 'email-2',
+    jobApplicationId: 'app-2',
+    companyName: 'Vercel',
+    jobTitle: 'Frontend Platform Engineer',
+    recipientName: 'Guillermo Rauch',
+    recipientRole: 'CEO & Founder',
+    recipientEmail: 'rauchg@vercel.com',
+    subject: 'Next.js Turbopack compiler contribution & Frontend Platform inquiry',
+    body: `Hi Guillermo,
+
+Huge fan of the Next.js 15 innovations and Turbopack compiler leaps. I saw the opening on the Frontend Platform team.
+
+Over the past four years, I've contributed to the React/Next ecosystem, reducing LCP by 42% on high-traffic production portals via streaming SSR and asset optimization. I'd love to bring this focus on developer experience and frontend performance to Vercel's core tooling.
+
+Would love to connect with the platform team whenever convenient.
+
+Warm regards,
+Alex Waris`,
+    status: 'reviewed',
+    createdAt: '2026-08-03T11:30:00Z',
+    tailoredHighlights: ['Turbopack & SSR streaming', '42% LCP optimization', 'Open-source contributions']
+  }
+];
+
