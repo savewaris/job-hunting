@@ -127,3 +127,26 @@ CREATE POLICY "Users can manage their interviews" ON public.interviews FOR ALL U
 CREATE POLICY "Users can manage their offers" ON public.offers FOR ALL USING (auth.uid() = user_id);
 CREATE POLICY "Users can manage their cold emails" ON public.cold_emails FOR ALL USING (auth.uid() = user_id);
 
+-- NOTE: This app has no Supabase auth flow yet (single personal user, anon key only).
+-- Under the auth.uid()-based policies above, auth.uid() is always NULL, so every
+-- insert/select above would silently fail. The permissive policies below intentionally
+-- relax RLS to (true) so the app actually works today. This is a conscious tradeoff,
+-- acceptable because the anon key is already client-exposed via NEXT_PUBLIC_* env vars
+-- and this is a single-user tool. TODO (future tech debt): add real Supabase auth and
+-- revert to the per-user policies above once that exists.
+DROP POLICY IF EXISTS "Users can manage their own profile" ON public.profiles;
+DROP POLICY IF EXISTS "Users can manage their own job applications" ON public.job_applications;
+DROP POLICY IF EXISTS "Users can manage their master profile" ON public.master_profiles;
+DROP POLICY IF EXISTS "Users can manage their tailored docs" ON public.tailored_documents;
+DROP POLICY IF EXISTS "Users can manage their interviews" ON public.interviews;
+DROP POLICY IF EXISTS "Users can manage their offers" ON public.offers;
+DROP POLICY IF EXISTS "Users can manage their cold emails" ON public.cold_emails;
+
+CREATE POLICY "Permissive (no-auth) access to profiles" ON public.profiles FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Permissive (no-auth) access to job applications" ON public.job_applications FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Permissive (no-auth) access to master profiles" ON public.master_profiles FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Permissive (no-auth) access to tailored docs" ON public.tailored_documents FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Permissive (no-auth) access to interviews" ON public.interviews FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Permissive (no-auth) access to offers" ON public.offers FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Permissive (no-auth) access to cold emails" ON public.cold_emails FOR ALL USING (true) WITH CHECK (true);
+

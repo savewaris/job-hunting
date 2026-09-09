@@ -1,52 +1,15 @@
-import fs from 'fs';
-import path from 'path';
-
 /**
- * Universal Multi-Provider Free-Tier AI Battery with Graceful Fallback
- * 
- * Supports:
- *  1. Shared package (@savewaris/ai-battery or ai-battery) when published
- *  2. Google Gemini Free Tier
- *  3. Groq Cloud Developer Free Tier
- *  4. OpenRouter Free Endpoints
- *  5. Cerebras Free Tier
- *  6. Intelligent Heuristics Fallback
+ * Multi-Provider Free-Tier AI Battery with Graceful Fallback
+ *
+ * Rotates across free-tier LLM providers so AI calls in this app carry
+ * zero marginal token cost. Tries each candidate in order and moves on
+ * to the next whenever a provider is missing its API key, throttled, or
+ * erroring. Only providers with a configured API key are attempted.
+ *
+ * Env vars read (all optional except at least one is required):
+ *   GEMINI_API_KEY or GOOGLE_API_KEY, GROQ_API_KEY, OPENROUTER_API_KEY, CEREBRAS_API_KEY
+ * These are loaded the normal Next.js way (.env.local / .env), no custom path scanning.
  */
-
-function loadEnvironmentKeys() {
-  const envPaths = [
-    path.join(process.cwd(), '.env'),
-    path.join(process.cwd(), '.env.local'),
-    'C:\\agent-second-brain\\.env',
-    'C:\\save\\Projects\\PersonalWebsite\\.env',
-  ];
-
-  for (const envPath of envPaths) {
-    try {
-      if (fs.existsSync(envPath)) {
-        const content = fs.readFileSync(envPath, 'utf8');
-        const lines = content.split('\n');
-        for (const line of lines) {
-          const trimmed = line.trim();
-          if (!trimmed || trimmed.startsWith('#')) continue;
-          const eqIdx = trimmed.indexOf('=');
-          if (eqIdx !== -1) {
-            const key = trimmed.substring(0, eqIdx).trim();
-            const val = trimmed.substring(eqIdx + 1).trim();
-            if (!process.env[key]) {
-              process.env[key] = val;
-            }
-          }
-        }
-      }
-    } catch {
-      // Ignore file reading errors in edge environments
-    }
-  }
-}
-
-// Attempt initial env load
-loadEnvironmentKeys();
 
 async function callGoogle(model: string, prompt: string, options: any = {}) {
   const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
@@ -106,51 +69,21 @@ async function callOpenAiCompatible(
   return data.choices?.[0]?.message?.content || '';
 }
 
-async function tryImportSharedBattery(): Promise<any> {
-  for (const pkg of ['@savewaris/ai-battery', 'ai-battery']) {
-    try {
-      // Use dynamic import evaluator so Next.js webpack build does not fail when package is not yet published
-      const dynamicImport = new Function('specifier', 'return import(specifier)');
-      const mod = await dynamicImport(pkg);
-      if (mod && typeof mod.queryAiWithFallback === 'function') {
-        return mod;
-      }
-    } catch {
-      // Gracefully continue to next package or fallback
-    }
-  }
-  return null;
-}
+const CANDIDATE_CHAIN = [
+  { provider: 'google', model: 'gemini-2.5-flash' },
+  { provider: 'google', model: 'gemini-2.5-flash-lite' },
+  { provider: 'google', model: 'gemini-1.5-flash' },
+  { provider: 'groq', model: 'llama-3.3-70b-versatile' },
+  { provider: 'groq', model: 'llama-3.1-8b-instant' },
+  { provider: 'openrouter', model: 'meta-llama/llama-3.3-70b-instruct:free' },
+  { provider: 'openrouter', model: 'google/gemini-2.0-flash-lite-preview-02-05:free' },
+  { provider: 'cerebras', model: 'llama3.3-70b' },
+] as const;
 
 export async function queryAiWithFallback(prompt: string, options: any = {}): Promise<string> {
-  // Check if published shared package exists first
-  try {
-    const shared = await tryImportSharedBattery();
-    if (shared && typeof shared.queryAiWithFallback === 'function') {
-      return await shared.queryAiWithFallback(prompt, options);
-    }
-  } catch {
-    // Graceful fallback: shared package not yet published to npm
-  }
-
-  // Reload keys if needed
-  loadEnvironmentKeys();
-
-  const candidateChain = [
-    { provider: 'google', model: 'gemini-2.5-flash' },
-    { provider: 'google', model: 'gemini-2.5-flash-lite' },
-    { provider: 'google', model: 'gemini-1.5-flash' },
-    { provider: 'groq', model: 'llama-3.3-70b-versatile' },
-    { provider: 'groq', model: 'llama-3.1-8b-instant' },
-    { provider: 'openrouter', model: 'meta-llama/llama-3.3-70b-instruct:free' },
-    { provider: 'openrouter', model: 'google/gemini-2.0-flash-lite-preview-02-05:free' },
-    { provider: 'cerebras', model: 'llama3.3-70b' },
-  ];
-
   let lastError: any = null;
 
-  for (const candidate of candidateChain) {
-    const { provider, model } = candidate;
+  for (const { provider, model } of CANDIDATE_CHAIN) {
     try {
       if (provider === 'google' && (process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY)) {
         return await callGoogle(model, prompt, options);

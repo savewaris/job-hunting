@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { queryAiWithFallback } from '@/lib/ai-battery';
 
 export async function POST(req: Request) {
   try {
@@ -38,33 +39,15 @@ Return ONLY raw JSON (no markdown fences, no extra commentary) matching this exa
     let rawAiResponse: string | null = null;
     let engineUsed = 'heuristics';
 
-    // Step 1: Attempt to use shared AI battery package if published
-    for (const pkg of ['@savewaris/ai-battery', 'ai-battery']) {
-      try {
-        const dynamicImport = new Function('specifier', 'return import(specifier)');
-        const sharedBattery = await dynamicImport(pkg);
-        if (sharedBattery && typeof sharedBattery.queryAiWithFallback === 'function') {
-          rawAiResponse = await sharedBattery.queryAiWithFallback(prompt);
-          engineUsed = 'shared-battery-package';
-          break;
-        }
-      } catch {
-        // Shared package not yet published - graceful fallback
-      }
+    // Step 1: Free-tier multi-provider AI battery (Gemini/Groq/OpenRouter/Cerebras failover)
+    try {
+      rawAiResponse = await queryAiWithFallback(prompt);
+      engineUsed = 'ai-battery';
+    } catch (batteryErr: any) {
+      console.warn('AI battery exhausted, activating smart heuristics:', batteryErr?.message);
     }
 
-    // Step 2: Fallback to local resilient battery if shared package is not published
-    if (!rawAiResponse) {
-      try {
-        const { queryAiWithFallback } = await import('@/lib/ai-battery');
-        rawAiResponse = await queryAiWithFallback(prompt);
-        engineUsed = 'local-resilient-battery';
-      } catch (batteryErr: any) {
-        console.warn('AI battery fallback encountered an error, activating smart heuristics:', batteryErr?.message);
-      }
-    }
-
-    // Step 3: Parse AI response if available
+    // Step 2: Parse AI response if available
     if (rawAiResponse) {
       try {
         const jsonMatch = rawAiResponse.match(/\{[\s\S]*\}/);
@@ -89,7 +72,7 @@ Return ONLY raw JSON (no markdown fences, no extra commentary) matching this exa
       }
     }
 
-    // Step 4: Intelligent Rule-based Heuristic Fallback
+    // Step 3: Intelligent Rule-based Heuristic Fallback
     const candidateSkills = new Set((masterProfile?.skills || []).map((s: string) => s.toLowerCase()));
     const jobReqs = (requirements && requirements.length > 0)
       ? requirements

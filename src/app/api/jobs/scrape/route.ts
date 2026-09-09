@@ -30,10 +30,12 @@ export async function POST(req: Request) {
 }
 
 export async function GET() {
+  // Read-only: GET must not have side effects (browser prefetch/navigation could
+  // otherwise trigger live scraping + DB writes). Use POST to persist results.
   try {
     const result = await runJobScraper({
       locationFilter: 'thailand-remote',
-      persistToDb: true,
+      persistToDb: false,
     });
 
     return NextResponse.json({
@@ -42,7 +44,7 @@ export async function GET() {
       count: result.totalScraped,
       sourcesChecked: result.sourcesChecked,
       locationFilter: 'Thailand / Remote',
-      persistedToDb: true,
+      persistedToDb: false,
     });
   } catch (error: any) {
     return NextResponse.json(
