@@ -40,6 +40,9 @@ CREATE TABLE IF NOT EXISTS public.job_applications (
 CREATE TABLE IF NOT EXISTS public.master_profiles (
   id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
   user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE UNIQUE,
+  full_name TEXT,
+  email TEXT,
+  target_title TEXT,
   summary TEXT,
   skills TEXT[],
   experiences JSONB DEFAULT '[]'::jsonb, -- Array of { company, role, dates, achievements }
@@ -105,9 +108,24 @@ CREATE TABLE IF NOT EXISTS public.cold_emails (
   body TEXT NOT NULL,
   status TEXT DEFAULT 'draft', -- draft, reviewed, sent
   sent_at TIMESTAMPTZ,
+  tailored_summary TEXT, -- AI-tailored summary carried from /api/ai-tailor, used in the sent resume PDF
+  suggested_bullets TEXT[], -- AI-tailored bullets carried from /api/ai-tailor, used in the sent resume PDF
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- If you already ran this schema before tailored_summary/suggested_bullets existed,
+-- run this against your existing Supabase project (safe to re-run, no-op if already applied):
+-- ALTER TABLE public.cold_emails
+--   ADD COLUMN IF NOT EXISTS tailored_summary TEXT,
+--   ADD COLUMN IF NOT EXISTS suggested_bullets TEXT[];
+
+-- If you already ran this schema before full_name/email/target_title existed on
+-- master_profiles, run this against your existing Supabase project (safe to re-run):
+-- ALTER TABLE public.master_profiles
+--   ADD COLUMN IF NOT EXISTS full_name TEXT,
+--   ADD COLUMN IF NOT EXISTS email TEXT,
+--   ADD COLUMN IF NOT EXISTS target_title TEXT;
 
 -- Enable Row Level Security (RLS)
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;

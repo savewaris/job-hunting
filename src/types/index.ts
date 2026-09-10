@@ -101,6 +101,8 @@ export interface ColdEmail {
   sentAt?: string;
   createdAt: string;
   tailoredHighlights?: string[];
+  tailoredSummary?: string;
+  suggestedBullets?: string[];
 }
 
 export type ScraperSource = 'all' | 'greenhouse' | 'lever' | 'ashby' | 'remoteok' | 'arbeitnow';

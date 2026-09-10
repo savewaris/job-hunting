@@ -12,12 +12,14 @@ import {
   Sparkles, 
   Copy, 
   Check, 
-  ShieldAlert, 
-  Building, 
-  User, 
+  ShieldAlert,
+  Building,
+  User,
   ExternalLink,
   PlusCircle,
-  FileText
+  FileText,
+  AlertTriangle,
+  Loader2
 } from 'lucide-react';
 
 interface ColdEmailQueueProps {
@@ -42,8 +44,13 @@ export const ColdEmailQueue: React.FC<ColdEmailQueueProps> = ({
   const [isEditing, setIsEditing] = useState(false);
   const [editSubject, setEditSubject] = useState('');
   const [editBody, setEditBody] = useState('');
+  const [editRecipientEmail, setEditRecipientEmail] = useState('');
+  const [editRecipientName, setEditRecipientName] = useState('');
+  const [editRecipientRole, setEditRecipientRole] = useState('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [sendingId, setSendingId] = useState<string | null>(null);
+  const [sendErrors, setSendErrors] = useState<Record<string, string>>({});
   const [selectedAppIdForGenerate, setSelectedAppIdForGenerate] = useState<string>(
     applications[0]?.id || ''
   );
@@ -63,6 +70,9 @@ export const ColdEmailQueue: React.FC<ColdEmailQueueProps> = ({
     setSelectedEmail(email);
     setEditSubject(email.subject);
     setEditBody(email.body);
+    setEditRecipientEmail(email.recipientEmail || '');
+    setEditRecipientName(email.recipientName || '');
+    setEditRecipientRole(email.recipientRole || '');
     setIsEditing(true);
   };
 
@@ -72,30 +82,57 @@ export const ColdEmailQueue: React.FC<ColdEmailQueueProps> = ({
       ...selectedEmail,
       subject: editSubject,
       body: editBody,
+      recipientEmail: editRecipientEmail.trim(),
+      recipientName: editRecipientName.trim(),
+      recipientRole: editRecipientRole.trim(),
       status: selectedEmail.status === 'sent' ? 'sent' : 'reviewed',
     };
     await onSaveEmail(updated);
+    setSendErrors((prev) => {
+      const next = { ...prev };
+      delete next[selectedEmail.id];
+      return next;
+    });
     setIsEditing(false);
     setSelectedEmail(null);
   };
 
-  // Explicit per-email Send Action (NO automatic sending)
+  // Explicit per-email Send Action (NO automatic sending) — sends a real email via
+  // the backend, with a tailored resume PDF attached, and only flips status on success.
   const handleExplicitSend = async (email: ColdEmail) => {
-    // 1. Open native mail client with pre-filled content
-    const mailtoUrl = `mailto:${encodeURIComponent(email.recipientEmail || '')}?subject=${encodeURIComponent(
-      email.subject
-    )}&body=${encodeURIComponent(email.body)}`;
-    
-    // Open in browser/native mail app
-    window.open(mailtoUrl, '_blank');
+    if (!email.recipientEmail?.trim()) {
+      setSendErrors((prev) => ({
+        ...prev,
+        [email.id]: 'Add a recipient email (Edit Draft) before sending.',
+      }));
+      return;
+    }
 
-    // 2. Mark this specific email as sent in DB with timestamp
-    const sentEmail: ColdEmail = {
-      ...email,
-      status: 'sent',
-      sentAt: new Date().toISOString(),
-    };
-    await onSendEmail(sentEmail);
+    setSendingId(email.id);
+    setSendErrors((prev) => {
+      const next = { ...prev };
+      delete next[email.id];
+      return next;
+    });
+
+    try {
+      const res = await fetch('/api/send-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, masterProfile }),
+      });
+      const json = await res.json();
+
+      if (json.success) {
+        await onSendEmail({ ...email, status: 'sent', sentAt: json.sentAt });
+      } else {
+        setSendErrors((prev) => ({ ...prev, [email.id]: json.error || 'Failed to send email.' }));
+      }
+    } catch (err: any) {
+      setSendErrors((prev) => ({ ...prev, [email.id]: err?.message || 'Failed to send email.' }));
+    } finally {
+      setSendingId(null);
+    }
   };
 
   // Generate new outreach draft for an application
@@ -121,18 +158,22 @@ export const ColdEmailQueue: React.FC<ColdEmailQueueProps> = ({
       const coldData = json.data?.coldEmail;
 
       const newDraft: ColdEmail = {
-        id: `email-${Date.now()}`,
+        id: crypto.randomUUID(),
         jobApplicationId: targetApp.id,
         companyName: targetApp.companyName,
         jobTitle: targetApp.jobTitle,
         recipientName: 'Hiring Team',
         recipientRole: 'Engineering Manager',
-        recipientEmail: `recruiting@${targetApp.companyName.toLowerCase().replace(/[^a-z0-9]/g, '')}.com`,
+        // Left blank deliberately — a guessed address can silently "succeed" at the
+        // SMTP level while reaching nobody useful. Edit Draft to add a real recipient.
+        recipientEmail: '',
         subject: coldData?.subject || `${targetApp.jobTitle} (Remote) — ${masterProfile.fullName}`,
         body: coldData?.body || `Hi team,\n\nI'm reaching out regarding the ${targetApp.jobTitle} role at ${targetApp.companyName}.\n\nBest regards,\n${masterProfile.fullName}`,
         status: 'draft',
         createdAt: new Date().toISOString(),
         tailoredHighlights: json.data?.matchReasons || ['Strong technical overlap'],
+        tailoredSummary: json.data?.tailoredSummary,
+        suggestedBullets: json.data?.suggestedBullets,
       };
 
       await onSaveEmail(newDraft);
@@ -257,13 +298,23 @@ export const ColdEmailQueue: React.FC<ColdEmailQueueProps> = ({
                         <User className="w-3 h-3 text-slate-500" />
                         <span>To: {email.recipientName} ({email.recipientRole || 'Hiring Manager'})</span>
                         <span className="text-slate-600">|</span>
-                        <span className="text-blue-400/80">{email.recipientEmail}</span>
+                        {email.recipientEmail ? (
+                          <span className="text-blue-400/80">{email.recipientEmail}</span>
+                        ) : (
+                          <span className="text-amber-400/80 italic">no recipient set</span>
+                        )}
                       </div>
                     </div>
                   </div>
 
                   {/* Status Badge */}
                   <div className="flex items-center space-x-2">
+                    {!email.recipientEmail && (
+                      <span className="px-2.5 py-1 text-xs font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/30 rounded-full flex items-center gap-1.5">
+                        <AlertTriangle className="w-3.5 h-3.5" />
+                        <span>Missing recipient</span>
+                      </span>
+                    )}
                     {email.status === 'sent' && (
                       <span className="px-2.5 py-1 text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 rounded-full flex items-center gap-1.5">
                         <CheckCircle className="w-3.5 h-3.5" />
@@ -339,18 +390,47 @@ export const ColdEmailQueue: React.FC<ColdEmailQueueProps> = ({
                   </div>
 
                   {/* Explicit Send Button */}
-                  <div className="flex items-center space-x-2">
+                  <div className="flex flex-col items-end space-y-1.5">
                     <button
                       onClick={() => handleExplicitSend(email)}
-                      className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-semibold shadow-lg transition-all transform hover:-translate-y-0.5 ${
+                      disabled={sendingId === email.id}
+                      className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-semibold shadow-lg transition-all transform hover:-translate-y-0.5 disabled:opacity-60 disabled:hover:translate-y-0 ${
                         isSent
                           ? 'bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700'
                           : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white shadow-blue-600/25'
                       }`}
                     >
-                      <Send className="w-3.5 h-3.5" />
-                      <span>{isSent ? 'Send Again (Explicit)' : 'Send Email Now'}</span>
+                      {sendingId === email.id ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <Send className="w-3.5 h-3.5" />
+                      )}
+                      <span>
+                        {sendingId === email.id
+                          ? 'Sending...'
+                          : isSent
+                          ? 'Send Again'
+                          : 'Send Email Now'}
+                      </span>
                     </button>
+                    {sendErrors[email.id] && (
+                      <div className="flex items-center gap-1.5 text-xs text-rose-400 max-w-xs text-right">
+                        <span>{sendErrors[email.id]}</span>
+                        <button
+                          onClick={() =>
+                            setSendErrors((prev) => {
+                              const next = { ...prev };
+                              delete next[email.id];
+                              return next;
+                            })
+                          }
+                          className="text-rose-500 hover:text-rose-300"
+                          title="Dismiss"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -367,6 +447,39 @@ export const ColdEmailQueue: React.FC<ColdEmailQueueProps> = ({
               <Edit3 className="w-4 h-4 text-blue-400" />
               <span>Edit Outreach Draft for {selectedEmail.companyName}</span>
             </h3>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="sm:col-span-2">
+                <label className="block text-xs font-medium text-slate-400 mb-1">
+                  Recipient Email <span className="text-rose-400">*required to send</span>
+                </label>
+                <input
+                  type="email"
+                  value={editRecipientEmail}
+                  onChange={(e) => setEditRecipientEmail(e.target.value)}
+                  placeholder="hiring-manager@company.com"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none focus:border-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-400 mb-1">Recipient Role</label>
+                <input
+                  type="text"
+                  value={editRecipientRole}
+                  onChange={(e) => setEditRecipientRole(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none focus:border-blue-500"
+                />
+              </div>
+              <div className="sm:col-span-3">
+                <label className="block text-xs font-medium text-slate-400 mb-1">Recipient Name</label>
+                <input
+                  type="text"
+                  value={editRecipientName}
+                  onChange={(e) => setEditRecipientName(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none focus:border-blue-500"
+                />
+              </div>
+            </div>
 
             <div>
               <label className="block text-xs font-medium text-slate-400 mb-1">Subject</label>

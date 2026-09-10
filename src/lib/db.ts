@@ -173,6 +173,19 @@ export async function deleteJobApplicationFromDb(id: string): Promise<boolean> {
 
 export async function fetchMasterProfile(): Promise<MasterProfile> {
   if (!isSupabaseConfigured()) {
+    // Mirror the localStorage fallback that saveMasterProfileToDb writes to when
+    // Supabase isn't configured — without this, saved edits were silently discarded
+    // on every reload since nothing ever read them back.
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = localStorage.getItem('careerpulse_master_profile');
+        if (stored) {
+          return { ...MOCK_MASTER_PROFILE, ...JSON.parse(stored) };
+        }
+      } catch (e) {
+        console.warn('Failed to read cached master profile from localStorage:', e);
+      }
+    }
     return MOCK_MASTER_PROFILE;
   }
 
@@ -217,6 +230,9 @@ export async function saveMasterProfileToDb(profile: MasterProfile): Promise<boo
 
   try {
     const payload = {
+      full_name: profile.fullName,
+      email: profile.email,
+      target_title: profile.targetTitle,
       summary: profile.summary,
       skills: profile.skills,
       experiences: profile.experiences,
@@ -348,6 +364,8 @@ export async function fetchColdEmails(): Promise<ColdEmail[]> {
       status: row.status || 'draft',
       sentAt: row.sent_at,
       createdAt: row.created_at,
+      tailoredSummary: row.tailored_summary,
+      suggestedBullets: row.suggested_bullets,
     }));
   } catch (err) {
     console.error('Error fetching cold emails:', err);
@@ -372,6 +390,8 @@ export async function saveColdEmailToDb(email: ColdEmail): Promise<ColdEmail> {
       body: email.body,
       status: email.status,
       sent_at: email.sentAt || null,
+      tailored_summary: email.tailoredSummary || null,
+      suggested_bullets: email.suggestedBullets || null,
       updated_at: new Date().toISOString(),
     };
 
