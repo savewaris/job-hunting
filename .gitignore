@@ -31,3 +31,7 @@ next-env.d.ts
 
 # leftover Playwright profile cache from the abandoned Facebook-automation branch
 /user_data/
+.browser-sessions/
+.agents/
+.test-run/
+

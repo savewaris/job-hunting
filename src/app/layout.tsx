@@ -1,12 +1,9 @@
 import type { Metadata } from 'next';
-import { Inter } from 'next/font/google';
 import './globals.css';
 
-const inter = Inter({ subsets: ['latin'] });
-
 export const metadata: Metadata = {
-  title: 'CareerPulse AI | All-in-One Job Hunting & Pipeline Suite',
-  description: 'Track job applications, parse job URLs with AI, tailor resumes and cover letters, prepare for interviews, and compare salary offers.',
+  title: 'CareerPulse AI — Autonomous Job Hunting',
+  description: 'Logic-First Autonomous Job Hunting Platform',
 };
 
 export default function RootLayout({
@@ -15,8 +12,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className="dark">
-      <body className={`${inter.className} bg-slate-950 text-slate-100 min-h-screen`}>
+    <html lang="en" className="dark" suppressHydrationWarning>
+      <body className="bg-[#090d16] text-slate-100 antialiased min-h-screen">
         {children}
       </body>
     </html>

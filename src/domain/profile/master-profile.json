@@ -1,0 +1,149 @@
+{
+  "fullName": "Waris Khamkaweepart",
+  "preferredName": "Save Waris",
+  "headline": "Full Stack & AI Systems Engineer",
+  "email": "savewaris@gmail.com",
+  "phone": "+66 81 234 5678",
+  "location": "Bangkok, Thailand",
+  "summary": "Passionate Full Stack & AI Systems Engineer with a B.Sc. in Database & Intelligence Systems from Mahidol University. Proven track record building high-performance web platforms, autonomous AI agent workflows, and data pipelines with React, Next.js, TypeScript, and Python.",
+  "skills": [
+    "HTML / CSS",
+    "Antigravity CLI",
+    "React",
+    "Next.js",
+    "Python",
+    "JavaScript",
+    "TypeScript",
+    "Node.js",
+    "PostgreSQL",
+    "Prisma ORM",
+    "Tailwind CSS",
+    "Playwright",
+    "AI Agents & MCP",
+    "Git & CI/CD"
+  ],
+  "detailedSkills": [
+    {
+      "name": "HTML / CSS",
+      "proficiency": 95,
+      "category": "Frontend"
+    },
+    {
+      "name": "Antigravity CLI",
+      "proficiency": 95,
+      "category": "AI Coding Assistant"
+    },
+    {
+      "name": "React",
+      "proficiency": 85,
+      "category": "Frontend"
+    },
+    {
+      "name": "Next.js",
+      "proficiency": 80,
+      "category": "Frontend"
+    },
+    {
+      "name": "Python",
+      "proficiency": 70,
+      "category": "Backend"
+    },
+    {
+      "name": "JavaScript",
+      "proficiency": 70,
+      "category": "Frontend"
+    }
+  ],
+  "experiences": [
+    {
+      "role": "Data Analyst Internship",
+      "company": "GISTDA",
+      "location": "Bangkok, Thailand",
+      "employmentType": "Internship",
+      "locationType": "On-site",
+      "startDate": "2023-06",
+      "endDate": "2023-07",
+      "description": "- Analyzed large datasets on Hot Spot Areas in Thailand using SQL and Python.\n- Extracted actionable insights to support strategic decision-making and visualization."
+    }
+  ],
+  "education": [
+    {
+      "institution": "Mahidol University",
+      "degree": "Bachelor of Science",
+      "fieldOfStudy": "Database and Intelligence System",
+      "startDate": "2021",
+      "endDate": "2025"
+    }
+  ],
+  "projects": [
+    {
+      "title": "Personal Planner — Modular Productivity & Habit OS",
+      "description": "Ultra-fast personal planner and productivity command center with keyboard-first workflows, interactive Kanban boards, and habit tracking.\n\n- **Keyboard-First Task Creation**: Cmd+K / Ctrl+K command palette and rapid chat-style task input.\n- **Interactive Kanban Boards**: Fluid drag-and-drop task lifecycle management and project status tracking.\n- **Habit Heatmap & Streak Engine**: GitHub-style visual consistency heatmaps with streak calculations.\n- **High-Assurance Testing**: Comprehensive test pyramid with Jest unit tests, multi-tier Playwright E2E, and Axe-core WCAG 2.2 accessibility audits.",
+      "tags": "Next.js 16 (App Router), React 19, TypeScript, Tailwind CSS, Prisma ORM, PostgreSQL, NextAuth.js, Playwright E2E, Jest",
+      "demoUrl": "https://personal-planner-seven-livid.vercel.app",
+      "repoUrl": "https://github.com/savewaris/personal-planner"
+    },
+    {
+      "title": "Agent Second Brain — Autonomous AI Orchestration Suite",
+      "description": "Enterprise-grade multi-agent governance system, knowledge vault, and autonomous GitHub issue solver.\n\n- **Autonomous Issue Solver**: Event-driven GitHub Action that self-branches, writes code, runs quality gates, and opens verified PRs.\n- **Custom MCP Servers**: Native mcp-progress-notifier & mcp-discord streaming agent telemetry, health metrics, and audit logs via webhooks.\n- **Multimodal Visual QA Gate**: Headless browser automation executing automated Gemini Vision audits on preview deployments.\n- **Zettelkasten Knowledge Vault**: Dynamic skill indexing, self-learning mistake memory, and architectural decision records (ADRs).",
+      "tags": "AI Multi-Agent Swarms, Model Context Protocol (MCP), TypeScript, Node.js, Gemini Vision AI, GitHub Actions, Obsidian",
+      "demoUrl": null,
+      "repoUrl": "https://github.com/savewaris/agent-second-brain"
+    },
+    {
+      "title": "Hexagonal Architecture & DDD Blueprint",
+      "description": "Enterprise-grade Clean Architecture and Domain-Driven Design (DDD) implementation in TypeScript. Decouples core business domain logic from transport protocols and databases via explicit Ports and Adapters, enabling 100% mocked unit tests and modular framework swappability.",
+      "tags": "Architecture, Clean Code, TypeScript, DDD, Ports & Adapters, TDD",
+      "demoUrl": null,
+      "repoUrl": "https://github.com/savewaris/hexagonal-architecture"
+    },
+    {
+      "title": "Task Management",
+      "description": "Full-stack Task Management application featuring a responsive React frontend and a robust Node.js/Express backend. Architected with modular database design principles to ensure scalable task tracking, secure user authentication, and real-time state management.",
+      "tags": "Nextjs, Supabase, Postgresql",
+      "demoUrl": "https://task-manager.vercel.app",
+      "repoUrl": "https://github.com/savewaris/task-manager.git"
+    },
+    {
+      "title": "Nutrin — Smart Nutrition Assistant",
+      "description": "Cross-platform mobile nutrition tracking application built with Flutter and Dart. Empowers users with personalized caloric intake monitoring, daily macronutrient analytics, meal logs, and BMI health tracking.",
+      "tags": "Mobile, Flutter, Dart, HealthTech, State Management, Cross-Platform",
+      "demoUrl": null,
+      "repoUrl": "https://github.com/savewaris/Nutrition-Assistant-Application-Nutrin-"
+    }
+  ],
+  "socials": [
+    {
+      "platform": "GitHub",
+      "url": "https://github.com/savewaris"
+    },
+    {
+      "platform": "LinkedIn",
+      "url": "https://www.linkedin.com/in/waris-khamkaweepart/"
+    },
+    {
+      "platform": "Instagram",
+      "url": "https://www.instagram.com/save.waris/"
+    },
+    {
+      "platform": "Gmail",
+      "url": "savewaris@gmail.com"
+    }
+  ],
+  "preferences": {
+    "targetRoles": [
+      "Full Stack Engineer",
+      "Frontend Engineer",
+      "Software Engineer",
+      "AI Application Engineer",
+      "Data Analyst / Engineer"
+    ],
+    "targetLocations": [
+      "Bangkok, Thailand",
+      "Remote (Thailand / APAC / Worldwide)"
+    ],
+    "workplaceType": "any",
+    "minSalaryTHB": 50000
+  },
+  "syncedAt": "2026-09-13T15:44:34.817Z"
+}

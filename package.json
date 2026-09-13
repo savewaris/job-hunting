@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "sync-profile": "node scripts/sync-profile.mjs",
+    "scrape:fb": "node scripts/facebook-cli.mjs"
   },
   "dependencies": {
     "@google/generative-ai": "^0.21.0",
