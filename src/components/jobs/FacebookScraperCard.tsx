@@ -33,6 +33,9 @@ export default function FacebookScraperCard({ initialJobs }: FacebookScraperCard
   const [rawText, setRawText] = useState('');
   const [isParsingText, setIsParsingText] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isScrapingUrl, setIsScrapingUrl] = useState(false);
+  const [isScrapingFeed, setIsScrapingFeed] = useState(false);
+  const [scrapeError, setScrapeError] = useState('');
   const [statusMessage, setStatusMessage] = useState('');
   const [expandedJobId, setExpandedJobId] = useState<string | null>(initialJobs[0]?.id || null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -80,6 +83,37 @@ export default function FacebookScraperCard({ initialJobs }: FacebookScraperCard
       setStatusMessage(`Error: ${err.message}`);
     } finally {
       setIsParsingText(false);
+    }
+  };
+
+  // Run the real visible Playwright scraper via the existing API route, instead of
+  // requiring the user to run `npm run scrape:fb` in a terminal themselves.
+  const handleRunScraper = async (mode: 'url' | 'feed') => {
+    if (mode === 'url' && !postUrl.trim()) return;
+    setScrapeError('');
+    setStatusMessage('');
+    if (mode === 'url') setIsScrapingUrl(true);
+    else setIsScrapingFeed(true);
+
+    try {
+      const res = await fetch('/api/jobs/scrape-facebook', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: mode === 'url' ? postUrl.trim() : '' }),
+      });
+      const data = await res.json();
+      if (!data.success) {
+        throw new Error(data.error || 'Scraper run failed');
+      }
+      if (data.allJobs) setJobs(data.allJobs);
+      if (data.job) setExpandedJobId(data.job.id);
+      setStatusMessage('✓ Playwright scraper finished — jobs list updated!');
+      if (mode === 'url') setPostUrl('');
+    } catch (err: any) {
+      setScrapeError(err.message || 'Failed to run the scraper');
+    } finally {
+      if (mode === 'url') setIsScrapingUrl(false);
+      else setIsScrapingFeed(false);
     }
   };
 
@@ -136,40 +170,71 @@ export default function FacebookScraperCard({ initialJobs }: FacebookScraperCard
         </div>
 
         <p className="text-xs text-slate-300 leading-relaxed">
-          To bypass browser-process locks, run the scraper directly in your terminal. Playwright opens a real Chrome window on your screen where you can scroll freely, and whenever you see a job post, press <code className="text-cyan-300 font-mono bg-slate-900 px-1 py-0.5 rounded border border-slate-800">[Enter]</code> in the terminal to capture it!
+          Playwright opens a real, visible Chrome window on this machine where you can scroll freely, and whenever you see a job post, press <code className="text-cyan-300 font-mono bg-slate-900 px-1 py-0.5 rounded border border-slate-800">[Enter]</code> in the terminal to capture it. Run it with the buttons below, or copy the command to run it yourself in a terminal.
         </p>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
           {/* Command 1: Interactive Feed Mode */}
-          <div className="p-3.5 rounded-xl bg-slate-900/90 border border-slate-800 flex items-center justify-between gap-2">
-            <div>
-              <span className="text-[10px] font-mono text-slate-500 block mb-0.5">1. INTERACTIVE FEED MODE (SCROLL & CAPTURE)</span>
-              <code className="text-xs font-mono text-cyan-300 font-bold">npm run scrape:fb</code>
+          <div className="p-3.5 rounded-xl bg-slate-900/90 border border-slate-800 space-y-2.5">
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <span className="text-[10px] font-mono text-slate-500 block mb-0.5">1. INTERACTIVE FEED MODE (SCROLL & CAPTURE)</span>
+                <code className="text-xs font-mono text-cyan-300 font-bold">npm run scrape:fb</code>
+              </div>
+              <button
+                onClick={() => handleCopy('npm run scrape:fb', 'cmd-1')}
+                className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition-all flex-shrink-0"
+                title="Copy Command"
+              >
+                {copiedId === 'cmd-1' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+              </button>
             </div>
             <button
-              onClick={() => handleCopy('npm run scrape:fb', 'cmd-1')}
-              className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition-all"
-              title="Copy Command"
+              onClick={() => handleRunScraper('feed')}
+              disabled={isScrapingFeed || isScrapingUrl}
+              className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-cyan-500/10 border border-cyan-500/30 text-cyan-300 text-xs font-mono font-semibold hover:bg-cyan-500/20 transition-all disabled:opacity-40"
             >
-              {copiedId === 'cmd-1' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+              <Play className={`w-3.5 h-3.5 ${isScrapingFeed ? 'animate-pulse' : ''}`} />
+              <span>{isScrapingFeed ? 'Scraper running — check the browser window...' : 'Run Interactive Scraper'}</span>
             </button>
           </div>
 
           {/* Command 2: Direct Single Post */}
-          <div className="p-3.5 rounded-xl bg-slate-900/90 border border-slate-800 flex items-center justify-between gap-2">
-            <div>
-              <span className="text-[10px] font-mono text-slate-500 block mb-0.5">2. DIRECT SINGLE POST URL</span>
-              <code className="text-xs font-mono text-cyan-300 font-bold">npm run scrape:fb -- --url &lt;link&gt;</code>
+          <div className="p-3.5 rounded-xl bg-slate-900/90 border border-slate-800 space-y-2.5">
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <span className="text-[10px] font-mono text-slate-500 block mb-0.5">2. DIRECT SINGLE POST URL</span>
+                <code className="text-xs font-mono text-cyan-300 font-bold">npm run scrape:fb -- --url &lt;link&gt;</code>
+              </div>
+              <button
+                onClick={() => handleCopy('npm run scrape:fb -- --url ', 'cmd-2')}
+                className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition-all flex-shrink-0"
+                title="Copy Command"
+              >
+                {copiedId === 'cmd-2' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+              </button>
             </div>
+            <input
+              type="text"
+              value={postUrl}
+              onChange={(e) => setPostUrl(e.target.value)}
+              placeholder="https://www.facebook.com/groups/.../posts/..."
+              className="w-full p-2 rounded-lg bg-slate-950 border border-slate-800 text-[11px] font-mono text-slate-200 placeholder:text-slate-600 focus:outline-none focus:border-cyan-500"
+            />
             <button
-              onClick={() => handleCopy('npm run scrape:fb -- --url ', 'cmd-2')}
-              className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition-all"
-              title="Copy Command"
+              onClick={() => handleRunScraper('url')}
+              disabled={isScrapingUrl || isScrapingFeed || !postUrl.trim()}
+              className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-cyan-500/10 border border-cyan-500/30 text-cyan-300 text-xs font-mono font-semibold hover:bg-cyan-500/20 transition-all disabled:opacity-40"
             >
-              {copiedId === 'cmd-2' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+              <Play className={`w-3.5 h-3.5 ${isScrapingUrl ? 'animate-pulse' : ''}`} />
+              <span>{isScrapingUrl ? 'Scraping this post...' : 'Run Scraper for This URL'}</span>
             </button>
           </div>
         </div>
+
+        {scrapeError && (
+          <div className="text-xs font-mono text-red-400 px-1">Error: {scrapeError}</div>
+        )}
       </div>
 
       {/* Quick Paste Post Text Box */}
