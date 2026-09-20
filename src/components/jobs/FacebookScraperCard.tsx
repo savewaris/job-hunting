@@ -27,6 +27,17 @@ interface FacebookScraperCardProps {
   initialJobs: ScrapedJob[];
 }
 
+const ALLOWED_URL_HOSTS = ['facebook.com', 'www.facebook.com', 'm.facebook.com'];
+
+function isAllowedFacebookUrl(rawUrl: string): boolean {
+  try {
+    const parsed = new URL(rawUrl);
+    return ALLOWED_URL_HOSTS.includes(parsed.hostname.toLowerCase()) && parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
 export default function FacebookScraperCard({ initialJobs }: FacebookScraperCardProps) {
   const [jobs, setJobs] = useState<ScrapedJob[]>(initialJobs);
   const [postUrl, setPostUrl] = useState('');
@@ -92,6 +103,11 @@ export default function FacebookScraperCard({ initialJobs }: FacebookScraperCard
     if (mode === 'url' && !postUrl.trim()) return;
     setScrapeError('');
     setStatusMessage('');
+
+    if (mode === 'url' && !isAllowedFacebookUrl(postUrl.trim())) {
+      setScrapeError('Only facebook.com post URLs are allowed');
+      return;
+    }
     if (mode === 'url') setIsScrapingUrl(true);
     else setIsScrapingFeed(true);
 
