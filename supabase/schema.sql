@@ -168,3 +168,39 @@ CREATE POLICY "Permissive (no-auth) access to interviews" ON public.interviews F
 CREATE POLICY "Permissive (no-auth) access to offers" ON public.offers FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Permissive (no-auth) access to cold emails" ON public.cold_emails FOR ALL USING (true) WITH CHECK (true);
 
+-- ============================================================
+-- Pipeline architecture migration (2026-09-27)
+-- See docs/superpowers/specs/2026-09-27-job-hunting-pipeline-architecture-design.md
+-- ============================================================
+
+ALTER TABLE public.job_applications
+  ADD COLUMN IF NOT EXISTS pipeline_stage TEXT NOT NULL DEFAULT 'new',
+    -- new, tailoring, tailored, sent, error
+  ADD COLUMN IF NOT EXISTS stage_error TEXT,
+  ADD COLUMN IF NOT EXISTS source TEXT DEFAULT 'manual',
+    -- facebook, greenhouse, lever, ashby, jobthai, jobsdb, manual
+  ADD COLUMN IF NOT EXISTS external_id TEXT,
+    -- dedup key: canonical job_url for API sources, content-hash of raw_post_content for pasted Facebook text
+  ADD COLUMN IF NOT EXISTS contact_method_type TEXT,
+    -- email, line, form, messenger, portal
+  ADD COLUMN IF NOT EXISTS contact_method_value TEXT,
+  ADD COLUMN IF NOT EXISTS raw_post_content TEXT,
+  ADD COLUMN IF NOT EXISTS author TEXT,
+  ADD COLUMN IF NOT EXISTS tailored_at TIMESTAMPTZ;
+    -- set the moment a tailor attempt starts (success or failure), used for the daily cap
+
+CREATE UNIQUE INDEX IF NOT EXISTS job_applications_external_id_idx
+  ON public.job_applications (external_id) WHERE external_id IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS public.pipeline_settings (
+  id INTEGER PRIMARY KEY DEFAULT 1 CHECK (id = 1), -- singleton row, single-user tool
+  auto_ingest_api_sources BOOLEAN NOT NULL DEFAULT false,
+  auto_tailor BOOLEAN NOT NULL DEFAULT false,
+  max_daily_auto_tailor INTEGER NOT NULL DEFAULT 20,
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+INSERT INTO public.pipeline_settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
+
+ALTER TABLE public.pipeline_settings ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Permissive (no-auth) access to pipeline settings" ON public.pipeline_settings FOR ALL USING (true) WITH CHECK (true);
+
