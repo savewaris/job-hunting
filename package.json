@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "sync-profile": "node scripts/sync-profile.mjs"
+    "sync-profile": "node scripts/sync-profile.mjs",
+    "test": "vitest run"
   },
   "dependencies": {
     "@google/generative-ai": "^0.21.0",
@@ -29,6 +30,7 @@
     "autoprefixer": "^10.4.19",
     "postcss": "^8.4.39",
     "tailwindcss": "^3.4.7",
-    "typescript": "5.9.3"
+    "typescript": "5.9.3",
+    "vitest": "^3.2.7"
   }
 }
