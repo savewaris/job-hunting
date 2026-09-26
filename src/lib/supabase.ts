@@ -14,6 +14,14 @@ export function getSupabaseClient(): SupabaseClient {
     );
   }
 
-  client = createClient(url, key);
+  client = createClient(url, key, {
+    global: {
+      // Next.js App Router patches the global fetch() and caches GET requests
+      // by default, including ones made internally by supabase-js — without
+      // this, pipeline_settings/job reads get served stale across requests
+      // even on routes marked `dynamic = 'force-dynamic'`.
+      fetch: (input, init) => fetch(input, { ...init, cache: 'no-store' }),
+    },
+  });
   return client;
 }

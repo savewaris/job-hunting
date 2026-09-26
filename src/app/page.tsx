@@ -1,20 +1,27 @@
 import { getMasterProfile } from '@/domain/profile';
-import { getSavedJobs } from '@/domain/jobs';
+import { getAllJobs } from '@/domain/jobs';
+import { getPipelineSettings } from '@/domain/pipeline/settings';
 import ProfileView from '@/components/profile/ProfileView';
 import FacebookScraperCard from '@/components/jobs/FacebookScraperCard';
+import PipelineSettingsCard from '@/components/pipeline/PipelineSettingsCard';
 
-export default function HomePage() {
+export const dynamic = 'force-dynamic';
+
+export default async function HomePage() {
   const profile = getMasterProfile();
-  const jobs = getSavedJobs();
+  const jobs = await getAllJobs();
+  const pipelineSettings = await getPipelineSettings();
 
   return (
     <main className="min-h-screen bg-[#090d16] text-slate-100 py-8">
       <div className="max-w-5xl mx-auto px-4 sm:px-6 space-y-8">
-        
+
+        <PipelineSettingsCard initialSettings={pipelineSettings} />
+
         {/* Feature 1: Candidate Master Profile */}
         <ProfileView initialProfile={profile} />
 
-        {/* Feature 2: Facebook Job Post Sourcing & Visible Playwright Scraper */}
+        {/* Feature 2: Facebook Job Post Sourcing */}
         <FacebookScraperCard initialJobs={jobs} />
 
       </div>
