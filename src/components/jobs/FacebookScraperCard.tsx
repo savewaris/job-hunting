@@ -2,25 +2,17 @@
 
 import React, { useState, useEffect } from 'react';
 import { ScrapedJob } from '@/types/job';
-import { 
-  Sparkles, 
-  ExternalLink, 
-  Play, 
-  RefreshCw, 
-  Mail, 
-  MessageSquare, 
-  CheckCircle2, 
-  ChevronDown, 
-  ChevronUp, 
-  Copy, 
-  Check, 
-  ShieldCheck, 
-  LogIn, 
-  ArrowDownCircle, 
-  MapPin, 
-  DollarSign, 
-  Terminal,
-  Clock
+import {
+  ExternalLink,
+  RefreshCw,
+  Mail,
+  MessageSquare,
+  ChevronDown,
+  ChevronUp,
+  Copy,
+  Check,
+  MapPin,
+  DollarSign
 } from 'lucide-react';
 
 interface FacebookScraperCardProps {
@@ -100,10 +92,10 @@ export default function FacebookScraperCard({ initialJobs }: FacebookScraperCard
             FEATURE 2 • HIGH-YIELD SOURCING
           </div>
           <h2 className="text-xl sm:text-2xl font-bold text-white flex items-center gap-2.5">
-            Facebook Post Sourcing & Dedicated CLI Scraper
+            Facebook Post Sourcing
           </h2>
           <p className="text-xs sm:text-sm text-slate-400 mt-1 max-w-2xl">
-            Thai tech hiring thrives on Facebook groups. Run the standalone CLI tool directly in your terminal to scroll your feed with zero bot blocks, or paste raw post text below.
+            Thai tech hiring thrives on Facebook groups. Browse Facebook yourself, then paste the raw post text below to capture it.
           </p>
         </div>
 
@@ -119,56 +111,6 @@ export default function FacebookScraperCard({ initialJobs }: FacebookScraperCard
           <span className="px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-800 text-xs font-mono text-cyan-400">
             {jobs.length} Verified Jobs
           </span>
-        </div>
-      </div>
-
-      {/* Terminal Command Center Card (Option C Implementation) */}
-      <div className="p-6 rounded-2xl bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 border border-cyan-500/30 shadow-xl space-y-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2 text-cyan-400 text-xs font-mono font-bold uppercase tracking-wider">
-            <Terminal className="w-4 h-4" />
-            <span>Standalone Playwright CLI Runner</span>
-          </div>
-          <span className="text-[11px] font-mono text-emerald-400 flex items-center gap-1">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-            Direct Terminal Execution
-          </span>
-        </div>
-
-        <p className="text-xs text-slate-300 leading-relaxed">
-          To bypass browser-process locks, run the scraper directly in your terminal. Playwright opens a real Chrome window on your screen where you can scroll freely, and whenever you see a job post, press <code className="text-cyan-300 font-mono bg-slate-900 px-1 py-0.5 rounded border border-slate-800">[Enter]</code> in the terminal to capture it!
-        </p>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
-          {/* Command 1: Interactive Feed Mode */}
-          <div className="p-3.5 rounded-xl bg-slate-900/90 border border-slate-800 flex items-center justify-between gap-2">
-            <div>
-              <span className="text-[10px] font-mono text-slate-500 block mb-0.5">1. INTERACTIVE FEED MODE (SCROLL & CAPTURE)</span>
-              <code className="text-xs font-mono text-cyan-300 font-bold">npm run scrape:fb</code>
-            </div>
-            <button
-              onClick={() => handleCopy('npm run scrape:fb', 'cmd-1')}
-              className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition-all"
-              title="Copy Command"
-            >
-              {copiedId === 'cmd-1' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-            </button>
-          </div>
-
-          {/* Command 2: Direct Single Post */}
-          <div className="p-3.5 rounded-xl bg-slate-900/90 border border-slate-800 flex items-center justify-between gap-2">
-            <div>
-              <span className="text-[10px] font-mono text-slate-500 block mb-0.5">2. DIRECT SINGLE POST URL</span>
-              <code className="text-xs font-mono text-cyan-300 font-bold">npm run scrape:fb -- --url &lt;link&gt;</code>
-            </div>
-            <button
-              onClick={() => handleCopy('npm run scrape:fb -- --url ', 'cmd-2')}
-              className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition-all"
-              title="Copy Command"
-            >
-              {copiedId === 'cmd-2' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-            </button>
-          </div>
         </div>
       </div>
 
@@ -212,7 +154,7 @@ export default function FacebookScraperCard({ initialJobs }: FacebookScraperCard
 
         {jobs.length === 0 ? (
           <div className="p-8 rounded-2xl bg-slate-950/40 border border-dashed border-slate-800 text-center text-xs font-mono text-slate-500">
-            No jobs in your feed yet. Run <code className="text-cyan-300">npm run scrape:fb</code> in your terminal or paste post text above!
+            No jobs in your feed yet. Paste a Facebook post's text above to capture it!
           </div>
         ) : (
           <div className="space-y-4">

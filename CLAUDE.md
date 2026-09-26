@@ -11,7 +11,6 @@ npm run start          # serve production build
 npm run lint            # next lint
 
 npm run sync-profile      # node scripts/sync-profile.mjs  — pulls resume data from a sibling PersonalWebsite project's Neon/Prisma DB into src/domain/profile/master-profile.json
-npm run scrape:fb          # node scripts/facebook-cli.mjs  — standalone Playwright CLI for sourcing jobs from Facebook (see below)
 ```
 
 There is no test suite configured (no test script, no test files). Verify changes via `npm run build` and manual exercise of the affected route/page.
@@ -34,17 +33,9 @@ Despite `@supabase/supabase-js` being a dependency and `supabase/schema.sql` def
 
 `supabase/schema.sql` encodes a "no-auth" tradeoff worth knowing if that migration ever happens: `auth.uid()`-based RLS policies are defined and then immediately dropped/replaced with permissive `USING (true)` policies, because this app has no Supabase auth flow (single personal user, anon key only).
 
-### Facebook job sourcing: three separate entry points, one CLI
+### Facebook job sourcing: manual paste only, no automation
 
-Facebook scraping is Playwright-based and **always runs non-headless** against a persistent browser profile at `.browser-sessions/facebook-profile/` (so a manual login persists across runs). There are three ways to trigger it, all converging on the same `jobs.json` store:
-
-- `scripts/facebook-cli.mjs` (`npm run scrape:fb`) — standalone terminal CLI. `--url <postUrl>` scrapes one post directly; with no args it opens an interactive feed-scroll mode where pressing Enter in the terminal captures whatever matches job keywords is currently visible in the browser window.
-- `src/app/api/facebook/*` routes (`init-session`, `status`, `scroll-feed`) — spawn/poll the same underlying scripts (`scripts/init-facebook-session.mjs`, `scripts/scroll-facebook-jobs.mjs`) from the web UI via `child_process`.
-- `src/app/api/jobs/scrape-facebook/route.ts` — spawns `scripts/facebook-scraper.mjs` for a single-URL scrape triggered from the UI.
-
-All parsing logic (title/company/salary/tech-stack/contact-method extraction from raw Thai/English post text) is duplicated between `src/domain/jobs/index.ts` (`parseJobText`, used by the `/api/jobs` route for pasted text) and `scripts/facebook-cli.mjs` (its own inline `parseJobText`, used by the live scraper). Keep both in sync if you change the extraction heuristics, or consolidate them — they are not currently shared.
-
-Because scraping spawns a real, visible Chrome window and requires a logged-in Facebook session, it cannot be meaningfully exercised in a headless/CI environment.
+Facebook sourcing is deliberately human-driven: the user browses Facebook themselves and pastes the raw post text into the app (`/api/jobs` POST route, handled by `parseJobText` in `src/domain/jobs/index.ts`). There is no autonomous login, session, or scraping — a prior implementation that logged into a real Facebook account via Playwright and scrolled the feed was removed because it contradicted this project's explicit decision to avoid automated Facebook access (ban/ToS risk). Do not reintroduce Playwright-based Facebook automation.
 
 ### Profile sync has a hard-coded external dependency
 
