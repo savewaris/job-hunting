@@ -1,8 +1,12 @@
 import masterProfileData from './master-profile.json';
-import { MasterProfile } from '@/types/profile';
+import { MasterProfile, ScreeningDefaults } from '@/types/profile';
 
 export function getMasterProfile(): MasterProfile {
   return masterProfileData as MasterProfile;
+}
+
+export function getScreeningDefaults(): ScreeningDefaults {
+  return (masterProfileData as MasterProfile).screeningDefaults;
 }
 
 export function getTargetSkills(): string[] {

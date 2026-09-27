@@ -1,6 +1,8 @@
+export type PipelineStage = 'new' | 'tailoring' | 'tailored' | 'sent' | 'error';
+
 export interface ScrapedJob {
   id: string;
-  source: 'facebook' | 'greenhouse' | 'ashby' | 'jobsdb' | 'remoteok' | 'manual';
+  source: 'facebook' | 'greenhouse' | 'ashby' | 'lever' | 'jobthai' | 'jobsdb' | 'manual';
   jobTitle: string;
   companyName: string;
   jobUrl: string;
@@ -17,6 +19,9 @@ export interface ScrapedJob {
   postedAt?: string;
   matchScore?: number;
   createdAt: string;
+  pipelineStage: PipelineStage;
+  stageError?: string | null;
+  externalId: string;
 }
 
 export interface FacebookScrapeRequest {
