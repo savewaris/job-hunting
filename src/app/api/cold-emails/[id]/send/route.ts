@@ -12,6 +12,12 @@ export async function POST(_req: Request, { params }: { params: { id: string } }
       return NextResponse.json({ success: false, error: 'Cold email not found' }, { status: 404 });
     }
 
+    if (email.status === 'sent') {
+      // Already sent — a network retry or double-click on the Send button
+      // must not re-email a real employer a second time.
+      return NextResponse.json({ success: true });
+    }
+
     const supabase = getSupabaseClient();
     const { data: doc } = await supabase
       .from('tailored_documents')
