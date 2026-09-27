@@ -16,17 +16,27 @@ export default function ColdEmailQueue({ initialEmails }: ColdEmailQueueProps) {
     setEmails(prev => prev.map(e => (e.id === id ? { ...e, [field]: value } : e)));
   };
 
-  const saveEdit = async (email: ColdEmail) => {
-    await fetch(`/api/cold-emails/${email.id}`, {
+  const saveEdit = async (email: ColdEmail): Promise<boolean> => {
+    const res = await fetch(`/api/cold-emails/${email.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ subject: email.subject, body: email.body }),
     });
+    return res.ok;
   };
 
   const handleSend = async (id: string) => {
     setSendingId(id);
     try {
+      // Blur (which fires saveEdit) and this click can race — awaiting the
+      // latest edit here first means Send never ships stale text while the
+      // screen shows the edited version.
+      const email = emails.find(e => e.id === id);
+      if (email) {
+        const saved = await saveEdit(email);
+        if (!saved) return;
+      }
+
       const res = await fetch(`/api/cold-emails/${id}/send`, { method: 'POST' });
       const data = await res.json();
       if (data.success) {

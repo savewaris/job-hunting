@@ -17,10 +17,10 @@ vi.mock('@/domain/pipeline/tailorJob', () => ({
   countTailoredToday: (...args: any[]) => mockCountTailoredToday(...args),
 }));
 
-import { advancePipeline } from '../runStage';
+import { advancePipeline, runTailorNow } from '../runStage';
 
 beforeEach(() => {
-  vi.clearAllMocks();
+  vi.resetAllMocks();
 });
 
 describe('advancePipeline', () => {
@@ -66,5 +66,30 @@ describe('advancePipeline', () => {
     mockTailorJob.mockRejectedValue(new Error('all providers failed'));
 
     await expect(advancePipeline('job-1')).resolves.not.toThrow();
+  });
+});
+
+describe('runTailorNow', () => {
+  it('allows retrying a job stuck at "error"', async () => {
+    mockGetJobById.mockResolvedValue({ id: 'job-1', pipelineStage: 'error' });
+
+    await runTailorNow('job-1');
+
+    expect(mockTailorJob).toHaveBeenCalledWith('job-1');
+  });
+
+  it('allows a first attempt on a job at "new"', async () => {
+    mockGetJobById.mockResolvedValue({ id: 'job-1', pipelineStage: 'new' });
+
+    await runTailorNow('job-1');
+
+    expect(mockTailorJob).toHaveBeenCalledWith('job-1');
+  });
+
+  it('rejects a job already tailored, tailoring, or sent', async () => {
+    mockGetJobById.mockResolvedValue({ id: 'job-1', pipelineStage: 'tailoring' });
+
+    await expect(runTailorNow('job-1')).rejects.toThrow('not in a tailorable state');
+    expect(mockTailorJob).not.toHaveBeenCalled();
   });
 });

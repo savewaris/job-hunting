@@ -23,7 +23,7 @@ export async function advancePipeline(jobId: string): Promise<void> {
 
 export async function runTailorNow(jobId: string): Promise<void> {
   const job = await getJobById(jobId);
-  if (!job || job.pipelineStage !== 'new') {
+  if (!job || (job.pipelineStage !== 'new' && job.pipelineStage !== 'error')) {
     throw new Error(`Job ${jobId} is not in a tailorable state (current stage: ${job?.pipelineStage})`);
   }
   await tailorJob(jobId);

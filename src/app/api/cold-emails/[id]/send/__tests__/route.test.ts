@@ -78,4 +78,41 @@ describe('POST /api/cold-emails/[id]/send', () => {
     expect(mockUpdateColdEmail).toHaveBeenCalledWith('email-1', { status: 'sent' });
     expect(json.success).toBe(true);
   });
+
+  it('refuses to send (409) when no tailored resume document exists, instead of emailing a blank one', async () => {
+    mockGetColdEmailById.mockResolvedValue({
+      id: 'email-1',
+      jobApplicationId: 'job-1',
+      recipientEmail: 'hr@acme.co',
+      subject: 'Application',
+      body: 'body',
+      status: 'draft',
+    });
+    mockFrom.mockReturnValue(chainable({ data: null, error: { message: 'no rows' } }));
+
+    const res = await POST(new Request('http://localhost/x'), { params: { id: 'email-1' } });
+    const json = await res.json();
+
+    expect(mockSendColdEmail).not.toHaveBeenCalled();
+    expect(json.success).toBe(false);
+    expect(res.status).toBe(409);
+  });
+
+  it('still reports success if the email sent but the post-send status update failed, so the UI never invites a resend', async () => {
+    mockGetColdEmailById.mockResolvedValue({
+      id: 'email-1',
+      jobApplicationId: 'job-1',
+      recipientEmail: 'hr@acme.co',
+      subject: 'Application',
+      body: 'body',
+      status: 'draft',
+    });
+    mockUpdateColdEmail.mockRejectedValue(new Error('supabase write timed out'));
+
+    const res = await POST(new Request('http://localhost/x'), { params: { id: 'email-1' } });
+    const json = await res.json();
+
+    expect(mockSendColdEmail).toHaveBeenCalledTimes(1);
+    expect(json.success).toBe(true);
+  });
 });

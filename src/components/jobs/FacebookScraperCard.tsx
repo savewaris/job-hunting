@@ -12,8 +12,27 @@ import {
   Copy,
   Check,
   MapPin,
-  DollarSign
+  DollarSign,
+  Sparkles,
+  AlertTriangle,
+  Loader2
 } from 'lucide-react';
+
+const STAGE_LABELS: Record<string, string> = {
+  new: 'New',
+  tailoring: 'Tailoring…',
+  tailored: 'Tailored',
+  sent: 'Sent',
+  error: 'Error',
+};
+
+const STAGE_STYLES: Record<string, string> = {
+  new: 'bg-slate-800 text-slate-300 border-slate-700',
+  tailoring: 'bg-blue-500/10 text-blue-300 border-blue-500/30',
+  tailored: 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30',
+  sent: 'bg-purple-500/10 text-purple-300 border-purple-500/30',
+  error: 'bg-red-500/10 text-red-300 border-red-500/30',
+};
 
 interface FacebookScraperCardProps {
   initialJobs: ScrapedJob[];
@@ -28,6 +47,7 @@ export default function FacebookScraperCard({ initialJobs }: FacebookScraperCard
   const [statusMessage, setStatusMessage] = useState('');
   const [expandedJobId, setExpandedJobId] = useState<string | null>(initialJobs[0]?.id || null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [tailoringId, setTailoringId] = useState<string | null>(null);
 
   // Poll for newly scraped jobs from CLI every 4 seconds
   const fetchLatestJobs = async () => {
@@ -79,6 +99,22 @@ export default function FacebookScraperCard({ initialJobs }: FacebookScraperCard
     navigator.clipboard.writeText(text);
     setCopiedId(id);
     setTimeout(() => setCopiedId(null), 2000);
+  };
+
+  const handleTailorNow = async (jobId: string) => {
+    setTailoringId(jobId);
+    try {
+      const res = await fetch(`/api/jobs/${jobId}/tailor`, { method: 'POST' });
+      const data = await res.json();
+      if (!data.success) {
+        setStatusMessage(`Tailoring failed: ${data.error}`);
+      }
+      await fetchLatestJobs();
+    } catch (err: any) {
+      setStatusMessage(`Tailoring failed: ${err.message}`);
+    } finally {
+      setTailoringId(null);
+    }
   };
 
   return (
@@ -172,6 +208,11 @@ export default function FacebookScraperCard({ initialJobs }: FacebookScraperCard
                       <span className="px-2.5 py-0.5 rounded-full bg-blue-600/20 text-blue-400 border border-blue-500/30 text-[10px] font-mono font-bold uppercase flex items-center gap-1">
                         <span className="font-sans font-black">f</span> Facebook Job Post
                       </span>
+                      <span
+                        className={`px-2.5 py-0.5 rounded-full border text-[10px] font-mono font-bold uppercase ${STAGE_STYLES[job.pipelineStage] ?? STAGE_STYLES.new}`}
+                      >
+                        {STAGE_LABELS[job.pipelineStage] ?? job.pipelineStage}
+                      </span>
                       <span className="text-xs font-mono text-slate-500">
                         {new Date(job.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       </span>
@@ -226,9 +267,38 @@ export default function FacebookScraperCard({ initialJobs }: FacebookScraperCard
                     </div>
                   )}
 
+                  {/* Pipeline error text */}
+                  {job.pipelineStage === 'error' && job.stageError && (
+                    <div className="flex items-start gap-2 p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-300 text-xs font-mono">
+                      <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                      <span>{job.stageError}</span>
+                    </div>
+                  )}
+
                   {/* Contact Methods / Direct Application Strip */}
                   <div className="pt-3 border-t border-slate-800/80 flex flex-wrap items-center justify-between gap-3">
                     <div className="flex items-center gap-2">
+                      {(job.pipelineStage === 'new' || job.pipelineStage === 'error') && (
+                        <button
+                          onClick={() => handleTailorNow(job.id)}
+                          disabled={tailoringId === job.id}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-cyan-500/10 border border-cyan-500/30 text-cyan-300 text-xs font-mono font-semibold hover:bg-cyan-500/20 transition-all disabled:opacity-40"
+                        >
+                          {tailoringId === job.id ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <Sparkles className="w-3.5 h-3.5" />
+                          )}
+                          <span>
+                            {tailoringId === job.id
+                              ? 'Tailoring…'
+                              : job.pipelineStage === 'error'
+                                ? 'Retry Tailoring'
+                                : 'Tailor Now'}
+                          </span>
+                        </button>
+                      )}
+
                       {job.contactMethod?.type === 'email' && (
                         <a
                           href={`mailto:${job.contactMethod.value}?subject=Application for ${encodeURIComponent(job.jobTitle)} - Save Waris`}
