@@ -1,4 +1,5 @@
 import { Pool } from 'pg';
+import { parse as parseConnectionString } from 'pg-connection-string';
 
 export interface Sql {
   query<T = Record<string, unknown>>(text: string, params?: unknown[]): Promise<{ rows: T[] }>;
@@ -9,11 +10,25 @@ export interface Sql {
   exec(text: string): Promise<void>;
 }
 
-const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
+const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '::1']);
 const SECURE_SSL_MODES = new Set(['require', 'verify-ca', 'verify-full']);
+// Params the parser would read from disk; stripped from the copy we parse so
+// the guard never touches the filesystem (pg reads them itself at connect time).
+const FILE_PARAMS = ['sslrootcert', 'sslcert', 'sslkey'];
+
+const ERR_INVALID = 'DATABASE_URL is not a valid connection URL';
+const ERR_TLS = 'DATABASE_URL must use TLS (add ?sslmode=require)';
+const ERR_CONFLICT = 'DATABASE_URL has conflicting TLS or host parameters';
 
 /**
- * Remote databases must be reached over TLS. Loopback hosts are exempt.
+ * Remote databases must be reached over TLS with certificate verification.
+ * Loopback hosts are exempt.
+ *
+ * `pg` interprets the string with `pg-connection-string`, whose rules differ
+ * from WHATWG `URL` (last duplicate param wins, `?host=` overrides the URL
+ * host, `uselibpqcompat` skips verification). So ambiguous inputs are rejected
+ * outright and the remaining facts come from that same parser.
+ *
  * Error messages never include the connection string (it holds the password).
  */
 export function assertSecureConnection(connectionString: string): void {
@@ -21,12 +36,48 @@ export function assertSecureConnection(connectionString: string): void {
   try {
     url = new URL(connectionString);
   } catch {
-    throw new Error('DATABASE_URL is not a valid connection URL');
+    throw new Error(ERR_INVALID);
   }
-  if (LOOPBACK_HOSTS.has(url.hostname.toLowerCase())) return;
-  const mode = url.searchParams.get('sslmode');
-  if (!mode || !SECURE_SSL_MODES.has(mode)) {
-    throw new Error('DATABASE_URL must use TLS (add ?sslmode=require)');
+  if (url.protocol !== 'postgres:' && url.protocol !== 'postgresql:') {
+    throw new Error(ERR_INVALID);
+  }
+
+  const names = Array.from(url.searchParams.keys()).map((k) => k.toLowerCase());
+  const sslmodeCount = names.filter((k) => k === 'sslmode').length;
+  if (
+    sslmodeCount > 1 ||
+    names.includes('host') ||
+    names.includes('hostaddr') ||
+    names.includes('uselibpqcompat')
+  ) {
+    throw new Error(ERR_CONFLICT);
+  }
+
+  for (const name of FILE_PARAMS) url.searchParams.delete(name);
+
+  // In non-libpq-compat mode (the only one allowed here) the parser treats
+  // prefer/require/verify-ca as aliases of verify-full and emits a process-wide
+  // deprecation warning for them. Parse a verify-full copy to keep that noise
+  // out of the guard; the mode we validate is the single original param.
+  const mode = url.searchParams.get('sslmode') ?? '';
+  if (mode === 'prefer' || mode === 'require' || mode === 'verify-ca') {
+    url.searchParams.set('sslmode', 'verify-full');
+  }
+
+  let parsed: ReturnType<typeof parseConnectionString>;
+  try {
+    parsed = parseConnectionString(url.toString());
+  } catch {
+    throw new Error(ERR_INVALID);
+  }
+
+  const host = (parsed.host ?? '').toLowerCase();
+  if (LOOPBACK_HOSTS.has(host)) return;
+
+  const ssl = parsed.ssl;
+  const tlsOn = typeof ssl === 'object' && ssl !== null;
+  if (!SECURE_SSL_MODES.has(mode) || !tlsOn || ssl.rejectUnauthorized === false) {
+    throw new Error(ERR_TLS);
   }
 }
 

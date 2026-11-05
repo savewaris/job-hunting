@@ -40,10 +40,94 @@ describe('assertSecureConnection', () => {
     expect(message).not.toContain('secret');
     expect(message).not.toContain('12345');
   });
+
+  describe('parser disagreements (pg-connection-string vs WHATWG URL)', () => {
+    const CONFLICT_MSG = 'DATABASE_URL has conflicting TLS or host parameters';
+
+    it.each([
+      `${remote}?sslmode=require&sslmode=disable`,
+      `${remote}?sslmode=disable&sslmode=require`,
+      `${remote}?sslmode=require&sslmode=require`,
+    ])('rejects duplicate sslmode: %s', (url) => {
+      expect(() => assertSecureConnection(url)).toThrow(CONFLICT_MSG);
+    });
+
+    it('rejects a host query param on a localhost URL', () => {
+      expect(() =>
+        assertSecureConnection('postgresql://u:p@localhost/db?host=remote.example.com'),
+      ).toThrow(CONFLICT_MSG);
+    });
+
+    it('rejects a host query param on a remote URL even with sslmode=require', () => {
+      expect(() =>
+        assertSecureConnection(
+          'postgresql://u:p@remote.example.com/db?sslmode=require&host=other.example.com',
+        ),
+      ).toThrow(CONFLICT_MSG);
+    });
+
+    it('rejects hostaddr', () => {
+      expect(() => assertSecureConnection(`${remote}?sslmode=require&hostaddr=10.0.0.1`)).toThrow(
+        CONFLICT_MSG,
+      );
+    });
+
+    it.each([
+      `${remote}?uselibpqcompat=true&sslmode=require`,
+      `${remote}?sslmode=require&uselibpqcompat=true`,
+      `${remote}?sslmode=require&uselibpqcompat=false`,
+    ])('rejects uselibpqcompat: %s', (url) => {
+      expect(() => assertSecureConnection(url)).toThrow(CONFLICT_MSG);
+    });
+
+    it('rejects sslmode=no-verify and a non-postgres scheme', () => {
+      expect(() => assertSecureConnection(`${remote}?sslmode=no-verify`)).toThrow(TLS_MSG);
+      expect(() => assertSecureConnection('http://u:p@remote.example.com/db?sslmode=require')).toThrow(
+        INVALID_MSG,
+      );
+    });
+
+    it('accepts a single sslmode=require or verify-full on a remote host', () => {
+      expect(() => assertSecureConnection(`${remote}?sslmode=require`)).not.toThrow();
+      expect(() => assertSecureConnection(`${remote}?sslmode=verify-full`)).not.toThrow();
+    });
+
+    it('does not read certificate files while checking', () => {
+      expect(() =>
+        assertSecureConnection(`${remote}?sslmode=verify-full&sslrootcert=/nonexistent/ca.crt`),
+      ).not.toThrow();
+    });
+
+    it('never leaks the input in error messages', () => {
+      const inputs = [
+        'postgresql://u:topsecretpw@localhost/db?host=leak.example.com',
+        'postgresql://u:topsecretpw@remote.example.com/db?sslmode=disable',
+        'postgresql://u:topsecretpw@remote.example.com/db?sslmode=require&sslmode=disable',
+        'postgresql://u:topsecretpw@/db',
+        '%%%topsecretpw',
+      ];
+      for (const input of inputs) {
+        try {
+          assertSecureConnection(input);
+          throw new Error('expected throw');
+        } catch (err) {
+          const m = (err as Error).message;
+          expect(m).not.toContain('topsecretpw');
+          expect(m).not.toContain('leak.example.com');
+          expect(m).not.toContain('remote.example.com');
+        }
+      }
+    });
+  });
 });
 
 describe('setDb / getDb', () => {
-  afterEach(() => setDb(null));
+  const originalDatabaseUrl = process.env.DATABASE_URL;
+  afterEach(() => {
+    setDb(null);
+    if (originalDatabaseUrl === undefined) delete process.env.DATABASE_URL;
+    else process.env.DATABASE_URL = originalDatabaseUrl;
+  });
 
   it('getDb honours the override under NODE_ENV=test and clears with null', () => {
     const db = pgliteSql();
