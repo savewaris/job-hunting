@@ -33,11 +33,12 @@ export async function applyMigrations(sql: Sql, dir: string): Promise<string[]> 
     if (already.has(file)) continue;
     const body = fs.readFileSync(path.join(dir, file), 'utf8');
     try {
+      // Migration files must not contain their own BEGIN/COMMIT. Sql.exec rolls
+      // back on failure (its contract), so a failing file leaves nothing behind.
       await sql.exec(
         `BEGIN;\n${body}\n;INSERT INTO schema_migrations (name) VALUES (${quote(file)});\nCOMMIT;`,
       );
     } catch (err) {
-      await sql.exec('ROLLBACK').catch(() => undefined);
       throw new Error(`Migration ${file} failed: ${err instanceof Error ? err.message : String(err)}`);
     }
     applied.push(file);

@@ -2,12 +2,17 @@ import { Pool } from 'pg';
 
 export interface Sql {
   query<T = Record<string, unknown>>(text: string, params?: unknown[]): Promise<{ rows: T[] }>;
-  /** Multi-statement, no params. */
+  /**
+   * Multi-statement, no params. Contract: implementations leave no open
+   * transaction behind after a failure (they roll back before rethrowing).
+   */
   exec(text: string): Promise<void>;
 }
 
 export function createPgSql(connectionString: string): Sql {
   const pool = new Pool({ connectionString });
+  // An idle client dropped by the pooler must not crash the long-running process.
+  pool.on('error', (err) => console.error('[DB_ERROR:pool]', err));
   return {
     async query<T = Record<string, unknown>>(text: string, params?: unknown[]) {
       const res = await pool.query(text, params as unknown[] | undefined);

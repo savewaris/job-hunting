@@ -2,22 +2,9 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { PGlite } from '@electric-sql/pglite';
 import type { Sql } from '@/lib/sql';
 import { applyMigrations } from '@/lib/migrate';
-
-function memSql(): Sql {
-  const db = new PGlite();
-  return {
-    async query<T>(text: string, params?: unknown[]) {
-      const res = await db.query<T>(text, params);
-      return { rows: res.rows };
-    },
-    async exec(text: string) {
-      await db.exec(text);
-    },
-  };
-}
+import { pgliteSql } from '../helpers/testDb';
 
 describe('applyMigrations', () => {
   let dir: string;
@@ -27,7 +14,7 @@ describe('applyMigrations', () => {
     dir = fs.mkdtempSync(path.join(os.tmpdir(), 'migrations-'));
     fs.writeFileSync(path.join(dir, '0001_a.sql'), 'CREATE TABLE a(id int);');
     fs.writeFileSync(path.join(dir, '0002_b.sql'), 'CREATE TABLE b(id int);');
-    sql = memSql();
+    sql = pgliteSql();
   });
 
   afterEach(() => {
@@ -69,5 +56,9 @@ describe('applyMigrations', () => {
 
     const rec = await sql.query<{ name: string }>('SELECT name FROM schema_migrations ORDER BY name');
     expect(rec.rows.map((r) => r.name)).toEqual(['0001_a.sql', '0002_b.sql']);
+
+    // No transaction left open: after removing the bad file, the rest applies.
+    fs.rmSync(path.join(dir, '0003_bad.sql'));
+    expect(await applyMigrations(sql, dir)).toEqual(['0004_after.sql']);
   });
 });
