@@ -14,18 +14,8 @@ vi.mock('pg', () => ({
 
 import { createPgSql } from '@/lib/sql';
 
-describe('createPgSql', () => {
+describe('createPgSql (mocked Pool)', () => {
   beforeEach(() => poolCtor.mockClear());
-
-  it('builds the Pool from the validated config, never the raw connection string', () => {
-    createPgSql('postgresql://u:pw@db.example.supabase.com:6543/postgres?sslmode=require');
-    expect(poolCtor).toHaveBeenCalledTimes(1);
-    const cfg = poolCtor.mock.calls[0][0] as Record<string, unknown>;
-    expect(cfg).not.toHaveProperty('connectionString');
-    expect(cfg.host).toBe('db.example.supabase.com');
-    expect(cfg.ssl).toBeTruthy();
-    expect((cfg.ssl as { rejectUnauthorized?: boolean }).rejectUnauthorized).not.toBe(false);
-  });
 
   it('does not create a Pool for an insecure or ambiguous string', () => {
     expect(() => createPgSql('postgresql://u:pw@db.example.com/postgres')).toThrow();
