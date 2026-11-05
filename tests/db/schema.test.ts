@@ -125,3 +125,26 @@ describe('migration 0001 idempotency', () => {
     expect(pol.rows).toEqual([]);
   });
 });
+
+describe('runs single running index', () => {
+  it('rejects a second running row', async () => {
+    const db = await createTestDb();
+    await db.query(`INSERT INTO runs (status) VALUES ('running')`);
+    await expect(db.query(`INSERT INTO runs (status) VALUES ('running')`)).rejects.toThrow();
+  });
+
+  it('allows succeeded and failed rows next to a running row', async () => {
+    const db = await createTestDb();
+    await db.query(`INSERT INTO runs (status) VALUES ('succeeded')`);
+    await db.query(`INSERT INTO runs (status) VALUES ('running')`);
+    await db.query(`INSERT INTO runs (status) VALUES ('failed')`);
+    const res = await db.query('SELECT count(*)::int AS n FROM runs');
+    expect(res.rows).toEqual([{ n: 3 }]);
+  });
+
+  it('migration 0002 can be re-run', async () => {
+    const db = await createTestDb();
+    const file = path.resolve(process.cwd(), 'supabase/migrations/0002_runs_single_running.sql');
+    await db.exec(fs.readFileSync(file, 'utf8'));
+  });
+});
