@@ -11,7 +11,8 @@
     "scrape:fb": "node scripts/facebook-cli.mjs",
     "test": "vitest run",
     "db:migrate": "tsx scripts/migrate.ts",
-    "db:import-legacy": "tsx scripts/import-legacy-jobs.ts"
+    "db:import-legacy": "tsx scripts/import-legacy-jobs.ts",
+    "db:seed-dev": "tsx scripts/seed-dev.ts"
   },
   "dependencies": {
     "@google/generative-ai": "^0.21.0",

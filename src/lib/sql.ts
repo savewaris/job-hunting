@@ -5,6 +5,8 @@ import {
   type ConnectionOptions,
 } from 'pg-connection-string';
 
+import { ERR_BOTH_SET, ERR_DEV_IN_PROD, createLazySql, openDevStore, resolveDevDbDir } from './devStore';
+
 export interface Sql {
   query<T = Record<string, unknown>>(text: string, params?: unknown[]): Promise<{ rows: T[] }>;
   /**
@@ -180,11 +182,24 @@ let override: Sql | null = null;
 // never opens a second connection pool.
 const globalState = globalThis as unknown as {
   __jobHuntingPgSql?: { url: string; sql: Sql };
+  __jobHuntingDevSql?: { dir: string; sql: Sql };
 };
 
 export function getDb(): Sql {
   if (override) return override;
-  const url = process.env.DATABASE_URL;
+  const url = process.env.DATABASE_URL || undefined;
+  const devDir = process.env.DEV_DB_DIR || undefined;
+  if (devDir) {
+    if (url) throw new Error(ERR_BOTH_SET);
+    if (process.env.NODE_ENV === 'production') throw new Error(ERR_DEV_IN_PROD);
+    const dir = resolveDevDbDir(devDir);
+    const cachedDev = globalState.__jobHuntingDevSql;
+    if (cachedDev && cachedDev.dir === dir) return cachedDev.sql;
+    // Lazy, so getDb stays synchronous; the persistent PGlite opens on first query.
+    const sql = createLazySql(() => openDevStore(dir));
+    globalState.__jobHuntingDevSql = { dir, sql };
+    return sql;
+  }
   if (!url) throw new Error('DATABASE_URL is not set');
   const cached = globalState.__jobHuntingPgSql;
   if (cached && cached.url === url) return cached.sql;
