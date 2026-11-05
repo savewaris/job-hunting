@@ -1,14 +1,16 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Sql } from '@/lib/sql';
 import type { ScrapedJob } from '@/types/job';
+import * as jobsDomain from '@/domain/jobs';
 import { createApplication } from '@/domain/applications/repo';
 import {
   fromScrapedJob,
   importLegacyJobs,
   listScrapedJobs,
   rowToScrapedJob,
+  syncLegacyJobs,
   type ApplicationDbRow,
 } from '@/domain/applications/legacy';
 import { createTestDb } from '../helpers/testDb';
@@ -21,6 +23,10 @@ let sql: Sql;
 
 beforeEach(async () => {
   sql = await createTestDb();
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
 });
 
 describe('importLegacyJobs', () => {
@@ -116,5 +122,17 @@ describe('ScrapedJob mapping', () => {
       rawPostContent: undefined,
       createdAt: '2026-01-02T03:04:05.000Z',
     });
+  });
+});
+
+describe('syncLegacyJobs', () => {
+  it('copies jobs from the JSON store into the database, idempotently', async () => {
+    const getSaved = vi.spyOn(jobsDomain, 'getSavedJobs').mockReturnValue(legacyJobs);
+    expect(await syncLegacyJobs(sql)).toEqual({ imported: 2, skipped: 0 });
+    expect(await syncLegacyJobs(sql)).toEqual({ imported: 0, skipped: 2 });
+    expect((await listScrapedJobs(sql)).map((j) => j.id).sort()).toEqual(
+      legacyJobs.map((j) => j.id).sort(),
+    );
+    getSaved.mockRestore();
   });
 });

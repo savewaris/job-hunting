@@ -1,8 +1,10 @@
 import { NextResponse } from 'next/server';
+import { getDb } from '@/lib/sql';
+import { fail } from '@/lib/http';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import path from 'path';
-import { getSavedJobs } from '@/domain/jobs';
+import { listScrapedJobs, syncLegacyJobs } from '@/domain/applications/legacy';
 
 const execFileAsync = promisify(execFile);
 
@@ -24,17 +26,15 @@ export async function POST(req: Request) {
     console.log('[API:scroll-facebook-jobs:stdout]', stdout);
     if (stderr) console.warn('[API:scroll-facebook-jobs:stderr]', stderr);
 
-    const updatedJobs = getSavedJobs();
+    await syncLegacyJobs(getDb());
+    const updatedJobs = await listScrapedJobs(getDb());
     return NextResponse.json({
       success: true,
       jobs: updatedJobs,
       message: 'Autonomous feed scroll completed!'
     });
-  } catch (err: any) {
+  } catch (err) {
     console.error('[API:scroll-facebook-jobs:error]', err);
-    return NextResponse.json(
-      { success: false, error: err.message || 'Failed to run feed scroller' },
-      { status: 500 }
-    );
+    return fail('Internal error', 500);
   }
 }

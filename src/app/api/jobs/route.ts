@@ -20,8 +20,13 @@ export async function GET() {
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json();
-    const { rawText, postUrl } = body;
+    let body: { rawText?: string; postUrl?: string };
+    try {
+      body = await req.json();
+    } catch {
+      return fail('Invalid JSON body', 400);
+    }
+    const { rawText, postUrl } = body ?? {};
 
     if (!rawText && !postUrl) {
       return fail('rawText or postUrl required', 400);

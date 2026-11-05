@@ -41,6 +41,18 @@ describe('POST /api/jobs', () => {
     expect((await res.json()).success).toBe(false);
   });
 
+  it('400 "Invalid JSON body" for a malformed body', async () => {
+    const res = await POST(
+      new Request('http://localhost/api/jobs', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: '{not json',
+      }),
+    );
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ success: false, error: 'Invalid JSON body' });
+  });
+
   it('saves a parsed post to the database and GET lists it', async () => {
     const res = await post({
       rawText: 'Full Stack Developer\nCompany: Acme Co\nEmail: hr@acme.test\nReact Node.js',

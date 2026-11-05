@@ -1,6 +1,7 @@
 import type { Sql } from '@/lib/sql';
 import { ConflictError } from '@/lib/errors';
 import type { ScrapedJob } from '@/types/job';
+import { getSavedJobs } from '@/domain/jobs';
 import { createApplication } from './repo';
 import type { CreateApplicationInput } from './types';
 
@@ -63,6 +64,8 @@ export async function listScrapedJobs(sql: Sql): Promise<ScrapedJob[]> {
   return res.rows.map(rowToScrapedJob);
 }
 
+// `author`, `postedAt` and `matchScore` have no DB column and are intentionally not
+// imported; they remain in the tracked jobs.json.
 export function fromScrapedJob(job: ScrapedJob): CreateApplicationInput {
   return {
     companyName: job.companyName,
@@ -98,4 +101,12 @@ export async function importLegacyJobs(
     }
   }
   return { imported, skipped };
+}
+
+/**
+ * Bridge for the Facebook scraper scripts, which still write only to jobs.json:
+ * copies any jobs not yet in the database over (idempotent).
+ */
+export function syncLegacyJobs(sql: Sql): Promise<{ imported: number; skipped: number }> {
+  return importLegacyJobs(sql, getSavedJobs());
 }
