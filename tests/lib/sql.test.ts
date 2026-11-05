@@ -1,4 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { assertSecureConnection, getDb, setDb } from '@/lib/sql';
 import { pgliteSql } from '../helpers/testDb';
 
@@ -92,10 +95,63 @@ describe('assertSecureConnection', () => {
       expect(() => assertSecureConnection(`${remote}?sslmode=verify-full`)).not.toThrow();
     });
 
-    it('does not read certificate files while checking', () => {
-      expect(() =>
-        assertSecureConnection(`${remote}?sslmode=verify-full&sslrootcert=/nonexistent/ca.crt`),
-      ).not.toThrow();
+    it('validates the unmodified string: reads sslrootcert into the returned config', () => {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ca-'));
+      const ca = path.join(dir, 'ca.crt');
+      fs.writeFileSync(ca, 'FAKE-CA');
+      try {
+        const cfg = assertSecureConnection(`${remote}?sslmode=verify-full&sslrootcert=${encodeURIComponent(ca)}`);
+        expect((cfg.ssl as { ca?: string }).ca).toBe('FAKE-CA');
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    });
+
+    it('a missing sslrootcert file is reported as invalid without leaking the path', () => {
+      let message = '';
+      try {
+        assertSecureConnection(`${remote}?sslmode=verify-full&sslrootcert=/nonexistent/secretdir/ca.crt`);
+      } catch (err) {
+        message = (err as Error).message;
+      }
+      expect(message).toBe(INVALID_MSG);
+      expect(message).not.toContain('secretdir');
+    });
+
+    it('does not emit the sslmode alias deprecation warning', () => {
+      const seen: string[] = [];
+      const listener = (w: Error) => seen.push(w.message);
+      process.on('warning', listener);
+      try {
+        assertSecureConnection(`${remote}?sslmode=require`);
+        assertSecureConnection(`${remote}?sslmode=verify-ca`);
+      } finally {
+        process.off('warning', listener);
+      }
+      expect(seen.filter((m) => m.includes('SSL modes'))).toEqual([]);
+    });
+
+    describe('returned (validated) config', () => {
+      it('has TLS set and verification on for a remote sslmode=require URL', () => {
+        const cfg = assertSecureConnection(`${remote}?sslmode=require`);
+        expect(cfg.host).toBe('db.example.supabase.com');
+        expect(cfg.port).toBe(6543);
+        expect(cfg.ssl).toBeTruthy();
+        expect(typeof cfg.ssl).toBe('object');
+        expect((cfg.ssl as { rejectUnauthorized?: boolean }).rejectUnauthorized).not.toBe(false);
+        expect(cfg).not.toHaveProperty('connectionString');
+      });
+
+      it('has no TLS only for loopback without sslmode', () => {
+        for (const url of [
+          'postgresql://u:p@localhost:5432/db',
+          'postgresql://u:p@127.0.0.1:5432/db',
+          'postgresql://u:p@[::1]:5432/db',
+        ]) {
+          const cfg = assertSecureConnection(url);
+          expect(cfg.ssl === undefined || cfg.ssl === false).toBe(true);
+        }
+      });
     });
 
     it('never leaks the input in error messages', () => {

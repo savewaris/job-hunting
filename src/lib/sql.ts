@@ -1,5 +1,9 @@
-import { Pool } from 'pg';
-import { parse as parseConnectionString } from 'pg-connection-string';
+import { Pool, type ClientConfig } from 'pg';
+import {
+  parse as parseConnectionString,
+  toClientConfig,
+  type ConnectionOptions,
+} from 'pg-connection-string';
 
 export interface Sql {
   query<T = Record<string, unknown>>(text: string, params?: unknown[]): Promise<{ rows: T[] }>;
@@ -12,26 +16,45 @@ export interface Sql {
 
 const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '::1']);
 const SECURE_SSL_MODES = new Set(['require', 'verify-ca', 'verify-full']);
-// Params the parser would read from disk; stripped from the copy we parse so
-// the guard never touches the filesystem (pg reads them itself at connect time).
-const FILE_PARAMS = ['sslrootcert', 'sslcert', 'sslkey'];
 
 const ERR_INVALID = 'DATABASE_URL is not a valid connection URL';
 const ERR_TLS = 'DATABASE_URL must use TLS (add ?sslmode=require)';
 const ERR_CONFLICT = 'DATABASE_URL has conflicting TLS or host parameters';
 
+const SSL_ALIAS_WARNING = /^SECURITY WARNING: The SSL modes/;
+
+/**
+ * Runs the pg-connection-string parser on the original, unmodified string,
+ * dropping only its process-wide "require/prefer/verify-ca are aliases of
+ * verify-full" deprecation warning. Any other warning passes through.
+ */
+function parseQuietly(connectionString: string): ConnectionOptions {
+  const original = process.emitWarning;
+  process.emitWarning = ((warning: string | Error, ...rest: unknown[]) => {
+    const text = typeof warning === 'string' ? warning : warning.message;
+    if (SSL_ALIAS_WARNING.test(text)) return;
+    return (original as (...a: unknown[]) => void).call(process, warning, ...rest);
+  }) as typeof process.emitWarning;
+  try {
+    return parseConnectionString(connectionString);
+  } finally {
+    process.emitWarning = original;
+  }
+}
+
 /**
  * Remote databases must be reached over TLS with certificate verification.
- * Loopback hosts are exempt.
+ * Loopback hosts are exempt. Returns the exact pg config that was validated;
+ * `createPgSql` builds the Pool from it, never from the raw string.
  *
- * `pg` interprets the string with `pg-connection-string`, whose rules differ
- * from WHATWG `URL` (last duplicate param wins, `?host=` overrides the URL
- * host, `uselibpqcompat` skips verification). So ambiguous inputs are rejected
- * outright and the remaining facts come from that same parser.
+ * `pg` interprets connection strings with `pg-connection-string`, whose rules
+ * differ from WHATWG `URL` (last duplicate param wins, `?host=` overrides the
+ * URL host, `uselibpqcompat` skips verification). So ambiguous inputs are
+ * rejected outright and every other fact comes from that same parser.
  *
  * Error messages never include the connection string (it holds the password).
  */
-export function assertSecureConnection(connectionString: string): void {
+export function assertSecureConnection(connectionString: string): ClientConfig {
   let url: URL;
   try {
     url = new URL(connectionString);
@@ -43,9 +66,9 @@ export function assertSecureConnection(connectionString: string): void {
   }
 
   const names = Array.from(url.searchParams.keys()).map((k) => k.toLowerCase());
-  const sslmodeCount = names.filter((k) => k === 'sslmode').length;
   if (
-    sslmodeCount > 1 ||
+    url.searchParams.getAll('sslmode').length > 1 ||
+    names.filter((k) => k === 'sslmode').length > 1 ||
     names.includes('host') ||
     names.includes('hostaddr') ||
     names.includes('uselibpqcompat')
@@ -53,37 +76,36 @@ export function assertSecureConnection(connectionString: string): void {
     throw new Error(ERR_CONFLICT);
   }
 
-  for (const name of FILE_PARAMS) url.searchParams.delete(name);
-
-  // In non-libpq-compat mode (the only one allowed here) the parser treats
-  // prefer/require/verify-ca as aliases of verify-full and emits a process-wide
-  // deprecation warning for them. Parse a verify-full copy to keep that noise
-  // out of the guard; the mode we validate is the single original param.
-  const mode = url.searchParams.get('sslmode') ?? '';
-  if (mode === 'prefer' || mode === 'require' || mode === 'verify-ca') {
-    url.searchParams.set('sslmode', 'verify-full');
-  }
-
-  let parsed: ReturnType<typeof parseConnectionString>;
+  let parsed: ConnectionOptions;
+  let config: ClientConfig;
   try {
-    parsed = parseConnectionString(url.toString());
+    parsed = parseQuietly(connectionString);
+    config = toClientConfig(parsed);
   } catch {
+    // Parser/fs errors can embed the input or file paths; replace them.
     throw new Error(ERR_INVALID);
   }
 
   const host = (parsed.host ?? '').toLowerCase();
-  if (LOOPBACK_HOSTS.has(host)) return;
+  if (LOOPBACK_HOSTS.has(host)) return config;
 
-  const ssl = parsed.ssl;
-  const tlsOn = typeof ssl === 'object' && ssl !== null;
-  if (!SECURE_SSL_MODES.has(mode) || !tlsOn || ssl.rejectUnauthorized === false) {
+  const mode = typeof parsed.sslmode === 'string' ? parsed.sslmode : '';
+  const ssl = config.ssl;
+  if (
+    !SECURE_SSL_MODES.has(mode) ||
+    typeof ssl !== 'object' ||
+    ssl === null ||
+    ssl.rejectUnauthorized === false
+  ) {
     throw new Error(ERR_TLS);
   }
+  return config;
 }
 
 export function createPgSql(connectionString: string): Sql {
-  assertSecureConnection(connectionString);
-  const pool = new Pool({ connectionString });
+  // Validated == used: the Pool gets the guard's config, not the raw string.
+  const config = assertSecureConnection(connectionString);
+  const pool = new Pool({ ...config });
   // An idle client dropped by the pooler must not crash the long-running process.
   pool.on('error', (err) => console.error('[DB_ERROR:pool]', err));
   return {
