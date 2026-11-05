@@ -1,14 +1,9 @@
 import path from 'node:path';
 import { createPgSql } from '../src/lib/sql';
 import { applyMigrations } from '../src/lib/migrate';
+import { loadEnv } from './loadEnv';
 
-for (const file of ['.env.local', '.env']) {
-  try {
-    process.loadEnvFile(file);
-  } catch {
-    // file missing: fine, DATABASE_URL may come from the real environment
-  }
-}
+loadEnv();
 
 async function main() {
   const url = process.env.DATABASE_URL;

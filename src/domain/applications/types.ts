@@ -52,4 +52,6 @@ export interface CreateApplicationInput {
   requirements?: string[];
   contactMethod?: { type: string; value: string };
   rawPostContent?: string;
+  /** ISO 8601; keeps an imported job's original capture time. Defaults to now(). */
+  createdAt?: string;
 }

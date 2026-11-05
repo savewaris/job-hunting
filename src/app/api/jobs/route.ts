@@ -1,13 +1,20 @@
-import { NextResponse } from 'next/server';
-import { getSavedJobs, saveJob, parseJobText } from '@/domain/jobs';
+import { getDb } from '@/lib/sql';
+import { fail, ok } from '@/lib/http';
+import { ConflictError } from '@/lib/errors';
+import { parseJobText } from '@/domain/jobs';
+import { createApplication } from '@/domain/applications/repo';
+import { fromScrapedJob, listScrapedJobs } from '@/domain/applications/legacy';
 import { ScrapedJob } from '@/types/job';
+
+export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
-    const jobs = getSavedJobs();
-    return NextResponse.json({ success: true, jobs });
-  } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+    const jobs = await listScrapedJobs(getDb());
+    return ok({ jobs });
+  } catch (err) {
+    console.error('[jobs:GET]', err);
+    return fail('Internal error', 500);
   }
 }
 
@@ -17,7 +24,7 @@ export async function POST(req: Request) {
     const { rawText, postUrl } = body;
 
     if (!rawText && !postUrl) {
-      return NextResponse.json({ success: false, error: 'rawText or postUrl required' }, { status: 400 });
+      return fail('rawText or postUrl required', 400);
     }
 
     const parsed = parseJobText(rawText || '', postUrl || 'https://facebook.com');
@@ -36,9 +43,11 @@ export async function POST(req: Request) {
       createdAt: new Date().toISOString(),
     };
 
-    saveJob(fullJob);
-    return NextResponse.json({ success: true, job: fullJob });
-  } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+    const app = await createApplication(getDb(), fromScrapedJob(fullJob));
+    return ok({ job: { ...fullJob, createdAt: app.createdAt } });
+  } catch (err) {
+    if (err instanceof ConflictError) return fail('Job already saved', 409);
+    console.error('[jobs:POST]', err);
+    return fail('Internal error', 500);
   }
 }

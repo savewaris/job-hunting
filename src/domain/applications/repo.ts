@@ -87,8 +87,9 @@ export async function createApplication(
       `WITH ins AS (
          INSERT INTO job_applications (
            company_name, job_title, job_url, location, salary_range, status, source, external_id,
-           job_description, requirements, contact_method, raw_post_content, status_changed_at
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::text[], $11::jsonb, $12, now())
+           job_description, requirements, contact_method, raw_post_content, status_changed_at, created_at
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::text[], $11::jsonb, $12, now(),
+           COALESCE($13::timestamptz, now()))
          RETURNING *
        )
        SELECT ${SELECT_COLS} FROM ins a`,
@@ -105,6 +106,7 @@ export async function createApplication(
         input.requirements ?? null,
         input.contactMethod ? JSON.stringify(input.contactMethod) : null,
         input.rawPostContent ?? null,
+        input.createdAt ?? null,
       ],
     );
   } catch (err) {

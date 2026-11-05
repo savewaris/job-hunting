@@ -1,11 +1,14 @@
 import { getMasterProfile } from '@/domain/profile';
-import { getSavedJobs } from '@/domain/jobs';
+import { getDb } from '@/lib/sql';
+import { listScrapedJobs } from '@/domain/applications/legacy';
 import ProfileView from '@/components/profile/ProfileView';
 import FacebookScraperCard from '@/components/jobs/FacebookScraperCard';
 
-export default function HomePage() {
+export const dynamic = 'force-dynamic';
+
+export default async function HomePage() {
   const profile = getMasterProfile();
-  const jobs = getSavedJobs();
+  const jobs = await listScrapedJobs(getDb());
 
   return (
     <main className="min-h-screen bg-[#090d16] text-slate-100 py-8">
