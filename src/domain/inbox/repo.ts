@@ -42,6 +42,9 @@ export const ERR_ANSWER_TOO_LONG = 'answer is too long';
 export const ERR_ANSWERED_NEEDS_QUESTION = 'answered only applies to question items';
 export const ERR_APPROVED_NEEDS_APPROVAL = 'approved only applies to approval items';
 
+export const ERR_NOT_APPROVAL = 'Only approval items can be refined';
+export const ERR_PREVIEW_REQUIRED = 'preview is required';
+
 /**
  * Messages of the plain Errors this module throws for bad caller input, so the
  * route layer can map exactly these to 400 and everything else to a generic 500.
@@ -54,6 +57,8 @@ export const INBOX_INPUT_ERRORS: ReadonlySet<string> = new Set([
   ERR_ANSWER_TOO_LONG,
   ERR_ANSWERED_NEEDS_QUESTION,
   ERR_APPROVED_NEEDS_APPROVAL,
+  ERR_NOT_APPROVAL,
+  ERR_PREVIEW_REQUIRED,
   NO_USABLE_TEXT,
 ]);
 
@@ -202,6 +207,10 @@ export async function resolveInboxItem(
     answer = typeof input.answer === 'string' ? input.answer.trim() : '';
     if (!answer) throw new Error(ERR_ANSWER_REQUIRED);
     if (answer.length > MAX_ANSWER_LENGTH) throw new Error(ERR_ANSWER_TOO_LONG);
+  } else if (decision === 'approved' && typeof input.answer === 'string') {
+    const trimmed = input.answer.trim();
+    if (trimmed.length > MAX_ANSWER_LENGTH) throw new Error(ERR_ANSWER_TOO_LONG);
+    answer = trimmed || null;
   }
 
   if (!UUID_RE.test(id)) throw new NotFoundError('Inbox item not found');
@@ -237,6 +246,11 @@ export async function resolveInboxItem(
            status = $2::text,
            decision = $3::text,
            answer = $4::text,
+           payload = CASE
+             WHEN $3::text = 'approved' AND $4::text IS NOT NULL
+             THEN jsonb_set(COALESCE(payload, '{}'::jsonb), '{preview}', to_jsonb($4::text), true)
+             ELSE payload
+           END,
            resolved_at = now()
          WHERE id = $1::uuid AND status = 'open'
          RETURNING *
@@ -282,4 +296,73 @@ export async function resolveInboxItem(
   );
   if (again.rows.length === 0) throw new NotFoundError('Inbox item not found');
   throw new ConflictError('Inbox item is already resolved');
+}
+
+export interface ApprovalJobContext {
+  item: InboxItem;
+  jobDescription: string | null;
+  requirements: string[] | null;
+  location: string | null;
+}
+
+/** Loads an open approval inbox item along with its linked job context. */
+export async function getOpenApprovalContext(sql: Sql, id: string): Promise<ApprovalJobContext> {
+  if (!UUID_RE.test(id)) throw new NotFoundError('Inbox item not found');
+  const res = await sql.query<
+    Row & {
+      job_description: string | null;
+      requirements: string[] | null;
+      location: string | null;
+    }
+  >(
+    `SELECT ${SELECT_COLS}, a.job_description, a.requirements, a.location
+     FROM inbox_items i LEFT JOIN job_applications a ON a.id = i.job_application_id
+     WHERE i.id = $1::uuid`,
+    [id],
+  );
+  if (res.rows.length === 0) throw new NotFoundError('Inbox item not found');
+  const row = res.rows[0];
+  if (row.status !== 'open') throw new ConflictError('Inbox item is already resolved');
+  if (row.kind !== 'approval') throw new Error(ERR_NOT_APPROVAL);
+  return {
+    item: toItem(row),
+    jobDescription: row.job_description ?? null,
+    requirements: row.requirements ?? null,
+    location: row.location ?? null,
+  };
+}
+
+/** Saves an updated draft preview (and optional metadata) on an open approval item. */
+export async function updateApprovalPreview(
+  sql: Sql,
+  id: string,
+  preview: string,
+  extraPayload?: Record<string, unknown>,
+): Promise<InboxItem> {
+  if (!UUID_RE.test(id)) throw new NotFoundError('Inbox item not found');
+  const trimmed = typeof preview === 'string' ? preview.trim() : '';
+  if (!trimmed) throw new Error(ERR_PREVIEW_REQUIRED);
+  if (trimmed.length > MAX_ANSWER_LENGTH) throw new Error(ERR_ANSWER_TOO_LONG);
+
+  const patch = JSON.stringify({ ...(extraPayload ?? {}), preview: trimmed });
+  const res = await sql.query<Row>(
+    `WITH upd AS (
+       UPDATE inbox_items SET
+         payload = COALESCE(payload, '{}'::jsonb) || $2::jsonb
+       WHERE id = $1::uuid AND status = 'open' AND kind = 'approval'
+       RETURNING *
+     )
+     SELECT ${SELECT_COLS}
+     FROM upd i LEFT JOIN job_applications a ON a.id = i.job_application_id`,
+    [id, patch],
+  );
+  if (res.rows.length > 0) return toItem(res.rows[0]);
+
+  const head = await sql.query<{ status: InboxStatus; kind: InboxKind }>(
+    'SELECT status, kind FROM inbox_items WHERE id = $1::uuid',
+    [id],
+  );
+  if (head.rows.length === 0) throw new NotFoundError('Inbox item not found');
+  if (head.rows[0].status !== 'open') throw new ConflictError('Inbox item is already resolved');
+  throw new Error(ERR_NOT_APPROVAL);
 }

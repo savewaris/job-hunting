@@ -5,6 +5,7 @@ import { createApplication } from '@/domain/applications/repo';
 import { createInboxItem, resolveInboxItem } from '@/domain/inbox/repo';
 import { GET } from '@/app/api/inbox/route';
 import { POST } from '@/app/api/inbox/[id]/resolve/route';
+import { POST as REFINE_POST } from '@/app/api/inbox/[id]/refine/route';
 import { createTestDb } from '../helpers/testDb';
 
 let sql: Sql;
@@ -136,5 +137,70 @@ describe('POST /api/inbox/[id]/resolve', () => {
     const res = await post(MISSING_ID, { decision: 'skipped' });
     expect(res.status).toBe(500);
     expect(await res.json()).toEqual({ success: false, error: 'Internal error' });
+  });
+});
+
+function postRefine(id: string, body: unknown, raw = false) {
+  return REFINE_POST(
+    new Request(`http://localhost/api/inbox/${id}/refine`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: raw ? (body as string) : JSON.stringify(body),
+    }),
+    { params: { id } },
+  );
+}
+
+describe('POST /api/inbox/[id]/refine', () => {
+  it('regenerates an approval cover letter from Master Profile with embedded Website and GitHub links', async () => {
+    const ap = await createInboxItem(sql, {
+      jobApplicationId: jobId,
+      kind: 'approval',
+      prompt: 'Approve cover letter?',
+      payload: { preview: 'Old placeholder draft' },
+    });
+
+    const res = await postRefine(ap.id, {
+      instruction: 'Highlight my Next.js, TypeScript, and AI agent architecture projects.',
+    });
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.success).toBe(true);
+    const preview = json.item.payload.preview as string;
+    expect(preview).toContain('Waris Khamkaweepart');
+    expect(preview).toContain('Mahidol University');
+    expect(preview).toContain('GISTDA');
+    expect(preview).toContain('https://personal-website-full-stack.vercel.app');
+    expect(preview).toContain('https://github.com/savewaris');
+    expect(preview).toContain('Highlight my Next.js, TypeScript, and AI agent architecture projects.');
+  });
+
+  it('saves a manually edited preview and ensures Personal Website & GitHub links remain embedded', async () => {
+    const ap = await createInboxItem(sql, {
+      jobApplicationId: jobId,
+      kind: 'approval',
+      prompt: 'Approve cover letter?',
+      payload: { preview: 'Old placeholder draft' },
+    });
+
+    const res = await postRefine(ap.id, {
+      preview: 'Custom edited cover letter without links yet.',
+    });
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.success).toBe(true);
+    const preview = json.item.payload.preview as string;
+    expect(preview).toContain('Custom edited cover letter without links yet.');
+    expect(preview).toContain('https://personal-website-full-stack.vercel.app');
+    expect(preview).toContain('https://github.com/savewaris');
+  });
+
+  it('rejects refining a non-approval item with 400 and a resolved item with 409', async () => {
+    const q = await question();
+    expect((await postRefine(q.id, {})).status).toBe(400);
+
+    const ap = await createInboxItem(sql, { kind: 'approval', prompt: 'Approve?' });
+    await resolveInboxItem(sql, ap.id, { decision: 'approved' });
+    expect((await postRefine(ap.id, {})).status).toBe(409);
   });
 });

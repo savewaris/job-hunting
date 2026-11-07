@@ -50,6 +50,9 @@ export interface MasterProfile {
   email: string;
   phone: string;
   location: string;
+  websiteUrl?: string;
+  githubUrl?: string;
+  linkedinUrl?: string;
   summary: string;
   skills: string[];
   detailedSkills: Skill[];

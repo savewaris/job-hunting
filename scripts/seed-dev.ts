@@ -14,6 +14,7 @@ import {
 import { askOrRecall, saveAnswer } from '../src/domain/answers/repo';
 import { createInboxItem } from '../src/domain/inbox/repo';
 import { startRun } from '../src/domain/runs/orchestrator';
+import { buildMasterProfileCoverLetter } from '../src/domain/tailoring/coverLetter';
 import { loadEnv } from './loadEnv';
 
 // Seeds the local dev store (DEV_DB_DIR) with obviously fake data so the
@@ -112,13 +113,18 @@ async function seed(sql: Sql) {
     if (res.kind !== 'pending') throw new Error(`Expected a pending question for "${text}"`);
   }
 
+  const sampleLabs = byCompany('Sample Labs');
   await createInboxItem(sql, {
-    jobApplicationId: byCompany('Sample Labs').id,
+    jobApplicationId: sampleLabs.id,
     kind: 'approval',
     prompt: 'Approve this cover letter for Sample Labs?',
     payload: {
-      preview:
-        'Dear Hiring Team at Sample Labs,\n\nI am writing to apply for the Full-Stack Engineer role. (Fake seed text for UI checks: replace with a real tailored letter.)\n\nKind regards,\nExample Applicant',
+      preview: buildMasterProfileCoverLetter({
+        companyName: sampleLabs.companyName,
+        jobTitle: sampleLabs.jobTitle,
+        location: sampleLabs.location,
+        requirements: ['Next.js', 'React', 'TypeScript', 'PostgreSQL', 'AI Agents'],
+      }),
     },
   });
   await createInboxItem(sql, {

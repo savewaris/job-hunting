@@ -3,8 +3,11 @@
   "preferredName": "Save Waris",
   "headline": "Full Stack & AI Systems Engineer",
   "email": "savewaris@gmail.com",
-  "phone": "+66 81 234 5678",
+  "phone": "+66 95 045 7333",
   "location": "Bangkok, Thailand",
+  "websiteUrl": "https://personal-website-full-stack.vercel.app",
+  "githubUrl": "https://github.com/savewaris",
+  "linkedinUrl": "https://www.linkedin.com/in/waris-khamkaweepart/",
   "summary": "Passionate Full Stack & AI Systems Engineer with a B.Sc. in Database & Intelligence Systems from Mahidol University. Proven track record building high-performance web platforms, autonomous AI agent workflows, and data pipelines with React, Next.js, TypeScript, and Python.",
   "skills": [
     "HTML / CSS",
@@ -113,6 +116,10 @@
     }
   ],
   "socials": [
+    {
+      "platform": "Personal Website",
+      "url": "https://personal-website-full-stack.vercel.app"
+    },
     {
       "platform": "GitHub",
       "url": "https://github.com/savewaris"
