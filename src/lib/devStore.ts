@@ -16,8 +16,9 @@ export const ERR_DEV_IN_PROD = 'DEV_DB_DIR is not allowed in production';
 
 /**
  * Validates DEV_DB_DIR and returns its absolute path under the project root
- * (process.cwd()). Rejects absolute paths (POSIX, drive-letter, UNC), drive or
- * URL-style colons, `..` segments, and the project root itself.
+ * (process.cwd()). Restricts DEV_DB_DIR to a single directory segment starting
+ * with `.dev-db` (e.g. `.dev-db`), rejecting absolute paths, drive or URL-style
+ * colons, path separators, `..` segments, and the project root itself.
  */
 export function resolveDevDbDir(dir: string): string {
   const trimmed = dir.trim();
@@ -26,17 +27,28 @@ export function resolveDevDbDir(dir: string): string {
     path.posix.isAbsolute(trimmed) ||
     path.win32.isAbsolute(trimmed) ||
     trimmed.includes(':') ||
-    trimmed.split(/[\\/]+/).includes('..');
+    /[\\/]/.test(trimmed) ||
+    !trimmed.startsWith('.dev-db');
   if (bad) throw new Error(ERR_BAD_DEV_DIR);
   const root = process.cwd();
   const resolved = path.resolve(root, trimmed);
   const rel = path.relative(root, resolved);
-  if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) throw new Error(ERR_BAD_DEV_DIR);
+  if (!rel || rel === '..' || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel)) {
+    throw new Error(ERR_BAD_DEV_DIR);
+  }
   return resolved;
+}
+
+/** Throws unless the environment allows the local dev store. */
+export function assertDevEnvAllowed(env: NodeJS.ProcessEnv = process.env): void {
+  if (env.NODE_ENV === 'production' || Boolean(env.VERCEL_ENV)) {
+    throw new Error(ERR_DEV_IN_PROD);
+  }
 }
 
 /** Throws unless the environment is a dev-store one (DEV_DB_DIR set, DATABASE_URL unset). */
 export function assertDevOnly(env: NodeJS.ProcessEnv): void {
+  assertDevEnvAllowed(env);
   if (env.DATABASE_URL) {
     throw new Error(
       'Refusing to seed: DATABASE_URL is set. The seed script writes fake data and only runs against the local dev store; unset DATABASE_URL and set DEV_DB_DIR (for example DEV_DB_DIR=.dev-db).',

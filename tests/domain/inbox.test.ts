@@ -219,6 +219,26 @@ describe('resolveInboxItem', () => {
     );
   });
 
+  it('maps Postgres deadlock/serialization errors (40P01 / 40001) during resolve to ConflictError', async () => {
+    const item = await question();
+    let count = 0;
+    const flakySql: Sql = {
+      query: async (text, params) => {
+        count += 1;
+        if (count === 2) {
+          const err = new Error('deadlock detected') as Error & { code?: string };
+          err.code = '40P01';
+          throw err;
+        }
+        return sql.query(text, params);
+      },
+      exec: (text) => sql.exec(text),
+    };
+    await expect(
+      resolveInboxItem(flakySql, item.id, { decision: 'answered', answer: '50k', saveToBank: true }),
+    ).rejects.toBeInstanceOf(ConflictError);
+  });
+
   it('saveToBank writes the answer under the normalised question key atomically', async () => {
     const item = await question('Expected salary??');
     const res = await resolveInboxItem(sql, item.id, {

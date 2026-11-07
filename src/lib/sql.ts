@@ -5,7 +5,13 @@ import {
   type ConnectionOptions,
 } from 'pg-connection-string';
 
-import { ERR_BOTH_SET, ERR_DEV_IN_PROD, createLazySql, openDevStore, resolveDevDbDir } from './devStore';
+import {
+  ERR_BOTH_SET,
+  assertDevEnvAllowed,
+  createLazySql,
+  openDevStore,
+  resolveDevDbDir,
+} from './devStore';
 
 export interface Sql {
   query<T = Record<string, unknown>>(text: string, params?: unknown[]): Promise<{ rows: T[] }>;
@@ -191,7 +197,7 @@ export function getDb(): Sql {
   const devDir = process.env.DEV_DB_DIR || undefined;
   if (devDir) {
     if (url) throw new Error(ERR_BOTH_SET);
-    if (process.env.NODE_ENV === 'production') throw new Error(ERR_DEV_IN_PROD);
+    assertDevEnvAllowed(process.env);
     const dir = resolveDevDbDir(devDir);
     const cachedDev = globalState.__jobHuntingDevSql;
     if (cachedDev && cachedDev.dir === dir) return cachedDev.sql;

@@ -90,10 +90,20 @@ async function finish(
   summary: Record<string, unknown>,
 ): Promise<Run> {
   const out = serialise(status, summary);
-  const res = await sql.query<RunRow>(
-    `UPDATE runs SET status = $2, finished_at = now(), summary = $3::jsonb
-     WHERE id = $1 RETURNING ${RUN_COLS}`,
-    [runId, out.status, out.json],
-  );
-  return toRun(res.rows[0]);
+  try {
+    const res = await sql.query<RunRow>(
+      `UPDATE runs SET status = $2, finished_at = now(), summary = $3::jsonb
+       WHERE id = $1 AND status = 'running' RETURNING ${RUN_COLS}`,
+      [runId, out.status, out.json],
+    );
+    return toRun(res.rows[0]);
+  } catch {
+    const fallback = JSON.stringify({ error: 'Run summary could not be saved' });
+    const res = await sql.query<RunRow>(
+      `UPDATE runs SET status = 'failed', finished_at = now(), summary = $2::jsonb
+       WHERE id = $1 RETURNING ${RUN_COLS}`,
+      [runId, fallback],
+    );
+    return toRun(res.rows[0]);
+  }
 }

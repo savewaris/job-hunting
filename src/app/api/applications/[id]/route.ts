@@ -37,6 +37,9 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
       if (typeof status !== 'string' || !(APPLICATION_STATUSES as readonly string[]).includes(status)) {
         return fail('Invalid status', 400);
       }
+      if (status === 'skipped') {
+        return fail('Use skip with a reason to skip an application', 400);
+      }
       const application = await moveApplication(getDb(), params.id, status as ApplicationStatus);
       return ok({ application });
     }

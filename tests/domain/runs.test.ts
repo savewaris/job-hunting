@@ -160,6 +160,17 @@ describe('startRun', () => {
     await sql.query(`INSERT INTO runs (status, started_at) VALUES ('running', $1)`, [recent]);
     await expect(startRun(sql, [okStep('s')], now)).rejects.toBeInstanceOf(ConflictError);
   });
+
+  it('closes the run with a minimal fallback summary when Postgres jsonb rejects the summary (e.g. NUL byte)', async () => {
+    const badJsonb: RunStep = {
+      name: 'badJsonb',
+      run: async () => ({ bad: 'hello\u0000world' }),
+    };
+    const run = await startRun(sql, [badJsonb]);
+    expect(run.status).toBe('failed');
+    expect(run.finishedAt).not.toBeNull();
+    expect(run.summary).toEqual({ error: 'Run summary could not be saved' });
+  });
 });
 
 describe('listRecentRuns', () => {

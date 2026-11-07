@@ -38,6 +38,12 @@ describe('normalizeQuestionKey', () => {
   it('returns an empty string when nothing usable remains', () => {
     expect(normalizeQuestionKey('???')).toBe('');
   });
+
+  it('strips zero-width format characters (e.g. ZWSP in Thai paste) without splitting words', () => {
+    expect(normalizeQuestionKey('เงิน\u200Bเดือน\u200Cที่คาดหวัง?')).toBe(
+      normalizeQuestionKey(THAI),
+    );
+  });
 });
 
 describe('saveAnswer / listAnswers / deleteAnswer', () => {

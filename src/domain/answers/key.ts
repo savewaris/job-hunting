@@ -8,6 +8,7 @@
 export function normalizeQuestionKey(text: string): string {
   return text
     .normalize('NFKC')
+    .replace(/\p{Cf}+/gu, '')
     .toLowerCase()
     .replace(/[^\p{L}\p{M}\p{N}]+/gu, ' ')
     .trim();

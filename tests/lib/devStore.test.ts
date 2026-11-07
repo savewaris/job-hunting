@@ -10,7 +10,7 @@ import {
 
 type Env = Record<string, string | undefined>;
 const env = process.env as Env;
-const KEYS = ['DATABASE_URL', 'DEV_DB_DIR', 'NODE_ENV'] as const;
+const KEYS = ['DATABASE_URL', 'DEV_DB_DIR', 'NODE_ENV', 'VERCEL_ENV'] as const;
 const saved: Env = {};
 for (const k of KEYS) saved[k] = env[k];
 
@@ -53,10 +53,13 @@ describe('getDb env selection', () => {
     expect(() => getDb()).toThrow('Set either DATABASE_URL or DEV_DB_DIR, not both');
   });
 
-  it('getDb refuses DEV_DB_DIR in production', () => {
+  it('getDb refuses DEV_DB_DIR in production or when VERCEL_ENV is set', () => {
     delete env.DATABASE_URL;
     env.DEV_DB_DIR = '.dev-db';
     env.NODE_ENV = 'production';
+    expect(() => getDb()).toThrow('DEV_DB_DIR is not allowed in production');
+    env.NODE_ENV = 'development';
+    env.VERCEL_ENV = 'preview';
     expect(() => getDb()).toThrow('DEV_DB_DIR is not allowed in production');
   });
 
@@ -71,6 +74,9 @@ describe('getDb env selection', () => {
     '..',
     '.',
     'memory://',
+    'src',
+    '.git',
+    '.dev-db/sub',
   ])(
     'getDb rejects DEV_DB_DIR=%s',
     (dir) => {

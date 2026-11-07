@@ -1,5 +1,9 @@
-import { getDb } from '../src/lib/sql';
-import { assertDevOnly } from '../src/lib/devStore';
+import { PGlite } from '@electric-sql/pglite';
+import path from 'node:path';
+import { assertDevOnly, resolveDevDbDir } from '../src/lib/devStore';
+import { applyMigrations } from '../src/lib/migrate';
+import { wrapPglite } from '../src/lib/pgliteSql';
+import type { Sql } from '../src/lib/sql';
 import {
   createApplication,
   moveApplication,
@@ -47,8 +51,7 @@ const JOBS: SeedJob[] = [
   { company: 'Overqualified Example', title: 'Junior Web Developer', location: 'Bangkok', salary: '40,000 THB', status: 'skipped', created: 8 },
 ];
 
-async function seed() {
-  const sql = getDb();
+async function seed(sql: Sql) {
   const now = Date.now();
 
   const existing = await sql.query<{ n: number }>('SELECT count(*)::int AS n FROM job_applications');
@@ -135,11 +138,23 @@ async function seed() {
 
 async function main() {
   assertDevOnly(process.env);
-  await seed();
-  process.exit(0);
+  const dir = resolveDevDbDir(process.env.DEV_DB_DIR as string);
+  let db: PGlite | null = null;
+  try {
+    db = new PGlite(dir);
+    await db.waitReady;
+    const sql = wrapPglite(db);
+    await applyMigrations(sql, path.resolve(process.cwd(), 'supabase/migrations'));
+    await seed(sql);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(
+      `${msg}\n(If the local dev server is holding ${process.env.DEV_DB_DIR}, stop the dev server first before running seed-dev.)`,
+    );
+    process.exitCode = 1;
+  } finally {
+    if (db) await db.close().catch(() => undefined);
+  }
 }
 
-main().catch((err) => {
-  console.error(err instanceof Error ? err.message : err);
-  process.exit(1);
-});
+void main();

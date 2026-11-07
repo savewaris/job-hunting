@@ -229,41 +229,50 @@ export async function resolveInboxItem(
   }
 
   const status: InboxStatus = decision === 'skipped' ? 'dismissed' : 'answered';
-  const res = await sql.query<Row>(
-    `WITH upd AS (
-       UPDATE inbox_items SET
-         status = $2::text,
-         decision = $3::text,
-         answer = $4::text,
-         resolved_at = now()
-       WHERE id = $1::uuid AND status = 'open'
-       RETURNING *
-     ), bank AS (
-       INSERT INTO answer_bank (key, question_text, answer, updated_at)
-       SELECT $5::text, upd.prompt, $4::text, now() FROM upd WHERE $5::text IS NOT NULL
-       ON CONFLICT (key) DO UPDATE SET
-         question_text = EXCLUDED.question_text,
-         answer = EXCLUDED.answer,
-         updated_at = now()
-       RETURNING key
-     ), siblings AS (
-       UPDATE inbox_items s SET
-         status = 'answered',
-         decision = 'answered',
-         answer = $4::text,
-         resolved_at = now()
-       FROM upd
-       WHERE $5::text IS NOT NULL
-         AND s.id <> upd.id
-         AND s.kind = 'question'
-         AND s.status = 'open'
-         AND s.question_key = $5::text
-       RETURNING s.id
-     )
-     SELECT ${SELECT_COLS}
-     FROM upd i LEFT JOIN job_applications a ON a.id = i.job_application_id`,
-    [id, status, decision, answer, bankKey],
-  );
+  let res: { rows: Row[] };
+  try {
+    res = await sql.query<Row>(
+      `WITH upd AS (
+         UPDATE inbox_items SET
+           status = $2::text,
+           decision = $3::text,
+           answer = $4::text,
+           resolved_at = now()
+         WHERE id = $1::uuid AND status = 'open'
+         RETURNING *
+       ), bank AS (
+         INSERT INTO answer_bank (key, question_text, answer, updated_at)
+         SELECT $5::text, upd.prompt, $4::text, now() FROM upd WHERE $5::text IS NOT NULL
+         ON CONFLICT (key) DO UPDATE SET
+           question_text = EXCLUDED.question_text,
+           answer = EXCLUDED.answer,
+           updated_at = now()
+         RETURNING key
+       ), siblings AS (
+         UPDATE inbox_items s SET
+           status = 'answered',
+           decision = 'answered',
+           answer = $4::text,
+           resolved_at = now()
+         FROM upd
+         WHERE $5::text IS NOT NULL
+           AND s.id <> upd.id
+           AND s.kind = 'question'
+           AND s.status = 'open'
+           AND s.question_key = $5::text
+         RETURNING s.id
+       )
+       SELECT ${SELECT_COLS}
+       FROM upd i LEFT JOIN job_applications a ON a.id = i.job_application_id`,
+      [id, status, decision, answer, bankKey],
+    );
+  } catch (err) {
+    const code = (err as { code?: string } | null)?.code;
+    if (code === '40P01' || code === '40001') {
+      throw new ConflictError('Inbox item is already resolved');
+    }
+    throw err;
+  }
   if (res.rows.length > 0) return toItem(res.rows[0]);
 
   // Zero rows updated: someone else resolved (or deleted) it since our read.

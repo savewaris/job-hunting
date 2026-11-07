@@ -58,6 +58,16 @@ describe('PATCH /api/applications/[id]', () => {
     expect((await res.json()).success).toBe(false);
   });
 
+  it('PATCH with status "skipped" (without skip reason) → 400 and changes nothing', async () => {
+    const app = await seed();
+    const res = await patch(app.id, { status: 'skipped' });
+    expect(res.status).toBe(400);
+    const json = await res.json();
+    expect(json.success).toBe(false);
+    const rows = await sql.query<{ status: string }>('SELECT status FROM job_applications');
+    expect(rows.rows[0].status).toBe('wishlist');
+  });
+
   it('PATCH unknown id → 404 and success:false', async () => {
     const res = await patch('00000000-0000-4000-8000-000000000000', { status: 'applied' });
     expect(res.status).toBe(404);
