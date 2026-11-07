@@ -15,6 +15,7 @@ import { askOrRecall, saveAnswer } from '../src/domain/answers/repo';
 import { createInboxItem } from '../src/domain/inbox/repo';
 import { startRun } from '../src/domain/runs/orchestrator';
 import { buildMasterProfileCoverLetter } from '../src/domain/tailoring/coverLetter';
+import { buildStandardFilledFields } from '../src/domain/ats/formFiller';
 import { loadEnv } from './loadEnv';
 
 // Seeds the local dev store (DEV_DB_DIR) with obviously fake data so the
@@ -117,14 +118,21 @@ async function seed(sql: Sql) {
   await createInboxItem(sql, {
     jobApplicationId: sampleLabs.id,
     kind: 'approval',
-    prompt: 'Approve this cover letter for Sample Labs?',
+    prompt: 'Approve career-page application & cover letter for Sample Labs (Full-Stack Engineer)?',
     payload: {
+      channel: 'career_form',
+      applyUrl: sampleLabs.jobUrl ?? 'https://example.com/jobs/2',
       preview: buildMasterProfileCoverLetter({
         companyName: sampleLabs.companyName,
         jobTitle: sampleLabs.jobTitle,
         location: sampleLabs.location,
         requirements: ['Next.js', 'React', 'TypeScript', 'PostgreSQL', 'AI Agents'],
       }),
+      filledFields: buildStandardFilledFields(
+        sampleLabs.companyName,
+        sampleLabs.jobTitle,
+        sampleLabs.jobUrl ?? 'https://example.com/jobs/2',
+      ),
     },
   });
   await createInboxItem(sql, {

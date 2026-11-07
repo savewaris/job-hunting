@@ -10,6 +10,9 @@ import {
   Sparkles,
   ExternalLink,
   PencilLine,
+  FileText,
+  Bot,
+  Mail,
 } from 'lucide-react';
 import { callApi, BTN_PRIMARY, BTN_SECONDARY, INPUT, PANEL, FOCUS } from './api';
 
@@ -56,10 +59,22 @@ function ItemCard({ item }: { item: InboxItemView }) {
   const [editingDraft, setEditingDraft] = useState(false);
   const [refineOpen, setRefineOpen] = useState(false);
   const [refineInstruction, setRefineInstruction] = useState('');
+  const [showFilledFields, setShowFilledFields] = useState(false);
   const [pending, setPending] = useState(false);
   const inFlight = useRef(false);
   const [message, setMessage] = useState('');
   const [isError, setIsError] = useState(false);
+
+  const filledFields =
+    typeof item.payload.filledFields === 'object' &&
+    item.payload.filledFields !== null &&
+    !Array.isArray(item.payload.filledFields)
+      ? (item.payload.filledFields as Record<string, string>)
+      : null;
+
+  const recipientEmail =
+    typeof item.payload.recipientEmail === 'string' ? item.payload.recipientEmail : null;
+  const applyUrl = typeof item.payload.applyUrl === 'string' ? item.payload.applyUrl : null;
 
   async function resolve(body: Record<string, unknown>) {
     if (inFlight.current) return;
@@ -162,6 +177,29 @@ function ItemCard({ item }: { item: InboxItemView }) {
     setPending(false);
   }
 
+  async function launchBrowserFormFiller() {
+    if (inFlight.current) return;
+    inFlight.current = true;
+    setPending(true);
+    setMessage('');
+    setIsError(false);
+    const res = await callApi(`/api/inbox/${encodeURIComponent(item.id)}/fill-form`, {
+      method: 'POST',
+    });
+    if (res.ok && res.data?.result) {
+      const r = res.data.result as { filledCount: number; stoppedReason?: string };
+      setMessage(
+        `Browser opened & filled ${r.filledCount} field(s). ${r.stoppedReason ?? 'Review in browser before submitting.'}`,
+      );
+      setIsError(false);
+    } else {
+      setMessage(res.error ?? 'Could not open browser form filler');
+      setIsError(true);
+    }
+    inFlight.current = false;
+    setPending(false);
+  }
+
   const detail = typeof item.payload.detail === 'string' ? item.payload.detail : null;
   const Icon =
     item.kind === 'question'
@@ -174,6 +212,7 @@ function ItemCard({ item }: { item: InboxItemView }) {
   const answerId = `answer-${item.id}`;
   const draftId = `draft-${item.id}`;
   const refineId = `refine-${item.id}`;
+  const pdfHref = `/api/inbox/${encodeURIComponent(item.id)}/resume-pdf`;
 
   return (
     <li
@@ -183,12 +222,31 @@ function ItemCard({ item }: { item: InboxItemView }) {
     >
       <div className="flex items-start gap-2">
         <Icon className="mt-0.5 h-4 w-4 shrink-0 text-sky-300" aria-hidden />
-        <div className="min-w-0">
-          <p className="text-xs text-slate-400">
-            <span className="font-medium text-slate-300">{kindLabel}</span>
-            {' · '}
-            {item.companyName ?? 'Unknown company'} — {item.jobTitle ?? 'Unknown role'}
-          </p>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-xs text-slate-400">
+              <span className="font-medium text-slate-300">{kindLabel}</span>
+              {' · '}
+              {item.companyName ?? 'Unknown company'} — {item.jobTitle ?? 'Unknown role'}
+            </p>
+            {recipientEmail && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[11px] text-emerald-300">
+                <Mail className="h-3 w-3" aria-hidden />
+                Email: {recipientEmail}
+              </span>
+            )}
+            {applyUrl && !recipientEmail && (
+              <a
+                href={applyUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 rounded-full bg-sky-500/15 px-2 py-0.5 text-[11px] text-sky-300 hover:bg-sky-500/25"
+              >
+                Company Career Form
+                <ExternalLink className="h-3 w-3" aria-hidden />
+              </a>
+            )}
+          </div>
           <p className="mt-1 break-words text-sm font-medium text-slate-100">{item.prompt}</p>
         </div>
       </div>
@@ -274,6 +332,22 @@ function ItemCard({ item }: { item: InboxItemView }) {
             )
           )}
 
+          {filledFields && showFilledFields && (
+            <div className="rounded-lg border border-slate-800 bg-slate-900/80 p-3 text-xs">
+              <p className="mb-2 font-semibold text-slate-200">
+                Pre-Mapped Career Form Fields (from Master Profile &amp; Answer Bank):
+              </p>
+              <dl className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+                {Object.entries(filledFields).map(([k, v]) => (
+                  <div key={k} className="rounded border border-slate-800/80 bg-slate-950/60 p-2">
+                    <dt className="text-[11px] text-slate-400">{k}</dt>
+                    <dd className="mt-0.5 break-all font-mono text-slate-200">{v}</dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+          )}
+
           {refineOpen && (
             <div className="space-y-2 rounded-lg border border-slate-800 bg-slate-900/70 p-3">
               <label htmlFor={refineId} className="block text-xs text-slate-300">
@@ -347,6 +421,36 @@ function ItemCard({ item }: { item: InboxItemView }) {
               >
                 <PencilLine className="h-3.5 w-3.5" aria-hidden />
                 Edit text
+              </button>
+            )}
+            <a
+              href={pdfHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={BTN_SECONDARY}
+            >
+              <FileText className="h-3.5 w-3.5 text-emerald-400" aria-hidden />
+              Preview Resume PDF
+            </a>
+            {filledFields && (
+              <button
+                type="button"
+                className={BTN_SECONDARY}
+                disabled={pending}
+                onClick={() => setShowFilledFields((v) => !v)}
+              >
+                {showFilledFields ? 'Hide Form Fields' : 'View Form Fields'}
+              </button>
+            )}
+            {applyUrl && !recipientEmail && (
+              <button
+                type="button"
+                className={BTN_SECONDARY}
+                disabled={pending}
+                onClick={launchBrowserFormFiller}
+              >
+                <Bot className="h-3.5 w-3.5 text-amber-300" aria-hidden />
+                Auto-Fill Form in Browser
               </button>
             )}
             <button

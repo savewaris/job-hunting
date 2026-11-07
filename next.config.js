@@ -3,8 +3,13 @@ const nextConfig = {
   reactStrictMode: true,
   swcMinify: true,
   experimental: {
-    // Keep the Postgres driver and the dev-store engine out of the server bundle.
-    serverComponentsExternalPackages: ['pg', '@electric-sql/pglite'],
+    // Keep the Postgres driver, dev-store engine, PDF renderer, and Playwright out of the server bundle.
+    serverComponentsExternalPackages: [
+      'pg',
+      '@electric-sql/pglite',
+      '@react-pdf/renderer',
+      'playwright',
+    ],
   },
   async headers() {
     // Clickjacking protection: this app must never be framed by another site.

@@ -4,8 +4,10 @@ import { listOpenInbox } from '@/domain/inbox/repo';
 import { computeMetrics } from '@/domain/metrics/compute';
 import { getSettings } from '@/domain/settings/repo';
 import { listRecentRuns } from '@/domain/runs/repo';
+import { listTargetCompanies } from '@/domain/companies/repo';
 import RunPanel from '@/components/dashboard/RunPanel';
 import InboxPanel from '@/components/dashboard/InboxPanel';
+import CompaniesPanel from '@/components/dashboard/CompaniesPanel';
 import MetricsStrip from '@/components/dashboard/MetricsStrip';
 import Board from '@/components/dashboard/Board';
 import SettingsPanel from '@/components/dashboard/SettingsPanel';
@@ -14,11 +16,12 @@ export const dynamic = 'force-dynamic';
 
 export default async function DashboardPage() {
   const sql = getDb();
-  const [inbox, applications, settings, runs] = await Promise.all([
+  const [inbox, applications, settings, runs, companies] = await Promise.all([
     listOpenInbox(sql),
     listApplications(sql),
     getSettings(sql),
     listRecentRuns(sql, 1),
+    listTargetCompanies(sql).catch(() => []),
   ]);
   const metrics = computeMetrics(applications, new Date());
 
@@ -42,6 +45,7 @@ export default async function DashboardPage() {
           payload: i.payload,
         }))}
       />
+      <CompaniesPanel companies={companies} />
       <MetricsStrip metrics={metrics} />
       <Board
         applications={applications.map((a) => ({
