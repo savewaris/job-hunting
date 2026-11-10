@@ -30,12 +30,14 @@ They apply about equally by (a) emailing a contact (Thai employers, Facebook pos
 - Anti-goal: a card marked "applied" with no email actually sent.
 
 ## Work items (in order)
-1. Safe send fix (this repo, TDD). Confirmed in `src/app/api/inbox/[id]/resolve/route.ts`:
+1. Safe send fix (this repo, TDD) - DONE 2026-11-10. Confirmed in `src/app/api/inbox/[id]/resolve/route.ts`:
    a. When `EMAIL_*` is unset the mailer returns `simulated: true`, yet the card is moved to `applied`.
       Fix: only move to `applied` when `sent === true`; when simulated, keep the card un-applied and tell the UI.
    b. The inbox item is resolved before the send; if the send throws, the error is only logged and the item
-      cannot be approved again (409). Fix: record delivery outcome, and allow retry of a failed delivery
-      without double-sending (idempotency key = inbox item id + a `delivered_at` column or equivalent).
+      cannot be approved again (409). Fix (DONE, 333 tests): the item is still claimed first (stops double-click
+      double sends); if nothing was sent it is reopened and the API returns 503 (mailer not configured) or 502
+      (send failed); on a real send `payload.delivery` stores recipient + message id and the item stays resolved.
+      No schema change was needed.
    c. Subject/filename hard-code the candidate's name; read it from the Master Profile.
 2. Local run config (no secrets in the repo): `.env.local` with `DEV_DB_DIR=.dev-db`, `EMAIL_SERVICE=gmail`,
    `EMAIL_USER`, `EMAIL_APP_PASSWORD`, `EMAIL_FROM_NAME`. The user creates the Gmail app password and

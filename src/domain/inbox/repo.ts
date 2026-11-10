@@ -366,3 +366,35 @@ export async function updateApprovalPreview(
   if (head.rows[0].status !== 'open') throw new ConflictError('Inbox item is already resolved');
   throw new Error(ERR_NOT_APPROVAL);
 }
+
+/**
+ * Puts an approved approval item back to "open" after its email could not be
+ * sent (mailer not configured, or the send threw), so the user can fix the
+ * cause and approve again. Only an approval that is currently approved is
+ * touched. Never call this once an email has actually gone out.
+ */
+export async function reopenApprovalItem(sql: Sql, id: string): Promise<boolean> {
+  if (!UUID_RE.test(id)) return false;
+  const res = await sql.query<{ id: string }>(
+    `UPDATE inbox_items SET status = 'open', decision = NULL, resolved_at = NULL
+     WHERE id = $1::uuid AND kind = 'approval' AND decision = 'approved'
+     RETURNING id`,
+    [id],
+  );
+  return res.rows.length > 0;
+}
+
+/** Records the outcome of a real send on the item (audit trail: who, when, message id). */
+export async function recordDelivery(
+  sql: Sql,
+  id: string,
+  delivery: { sent: true; recipient: string; messageId?: string },
+): Promise<void> {
+  if (!UUID_RE.test(id)) return;
+  await sql.query(
+    `UPDATE inbox_items
+     SET payload = jsonb_set(COALESCE(payload, '{}'::jsonb), '{delivery}', $2::jsonb, true)
+     WHERE id = $1::uuid`,
+    [id, JSON.stringify({ ...delivery, at: new Date().toISOString() })],
+  );
+}

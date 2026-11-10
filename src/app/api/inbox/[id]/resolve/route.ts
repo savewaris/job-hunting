@@ -4,6 +4,8 @@ import { ConflictError, NotFoundError } from '@/lib/errors';
 import {
   INBOX_DECISIONS,
   INBOX_INPUT_ERRORS,
+  recordDelivery,
+  reopenApprovalItem,
   resolveInboxItem,
   type InboxDecision,
 } from '@/domain/inbox/repo';
@@ -11,6 +13,7 @@ import { moveApplication } from '@/domain/applications/repo';
 import { generateTailoredResumePdf } from '@/domain/tailoring/resumePdf';
 import { ensureMasterProfileLinks } from '@/domain/tailoring/coverLetter';
 import { sendApplicationEmail } from '@/lib/mailer';
+import { getCandidateContact } from '@/domain/profile';
 
 export const dynamic = 'force-dynamic';
 
@@ -49,6 +52,9 @@ export async function POST(
 
     let delivery: Record<string, unknown> | undefined;
     if (decision === 'approved' && item.jobApplicationId) {
+      // Set true only once the mail server has accepted the message. After that
+      // the item must stay resolved: reopening it would invite a second email.
+      let emailSent = false;
       try {
         const jobRes = await sql.query<{
           company_name: string;
@@ -81,14 +87,36 @@ export async function POST(
                 (typeof item.payload.preview === 'string' ? item.payload.preview : ''),
             );
             const safeCompany = job.company_name.replace(/[^a-zA-Z0-9_-]+/g, '_').slice(0, 40);
+            const { fullName } = getCandidateContact();
+            const safeName = fullName.replace(/[^a-zA-Z0-9_-]+/g, '_');
             const emailRes = await sendApplicationEmail({
               to: contactMethod.value,
-              subject: `Application: ${job.job_title} at ${job.company_name} — Waris Khamkaweepart`,
+              subject: `Application: ${job.job_title} at ${job.company_name} — ${fullName}`,
               body: coverLetter,
               resumePdfBuffer: pdf,
-              resumeFilename: `Waris_Khamkaweepart_Resume_${safeCompany}.pdf`,
+              resumeFilename: `${safeName}_Resume_${safeCompany}.pdf`,
             });
+
+            if (!emailRes.sent) {
+              // Mailer is not configured: nothing left the machine. Do not move the
+              // card to "applied"; give the approval back so it can be sent for real.
+              await reopenApprovalItem(sql, item.id);
+              return fail(
+                'Email is not configured (set EMAIL_SERVICE, EMAIL_USER and EMAIL_APP_PASSWORD in .env.local and restart). Nothing was sent and the approval is open again.',
+                503,
+              );
+            }
+            emailSent = true;
             delivery = { channel: 'email', ...emailRes };
+            try {
+              await recordDelivery(sql, item.id, {
+                sent: true,
+                recipient: emailRes.recipient,
+                messageId: emailRes.messageId,
+              });
+            } catch (recordErr) {
+              console.error('[inbox:resolve:record-delivery]', recordErr);
+            }
           } else {
             delivery = {
               channel: 'career_form',
@@ -96,10 +124,24 @@ export async function POST(
             };
           }
 
-          await moveApplication(sql, item.jobApplicationId, 'applied');
+          try {
+            await moveApplication(sql, item.jobApplicationId, 'applied');
+          } catch (moveErr) {
+            // The email (if any) already went out: report success so nobody clicks again.
+            console.error('[inbox:resolve:move-application]', moveErr);
+          }
         }
       } catch (deliveryErr) {
         console.error('[inbox:resolve:delivery]', deliveryErr);
+        if (!emailSent) {
+          await reopenApprovalItem(sql, item.id).catch((reopenErr) =>
+            console.error('[inbox:resolve:reopen]', reopenErr),
+          );
+          return fail(
+            'Could not send the email. Nothing was sent and the approval is open again; check the server log and try again.',
+            502,
+          );
+        }
       }
     }
 
