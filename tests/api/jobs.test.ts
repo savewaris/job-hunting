@@ -74,6 +74,29 @@ describe('POST /api/jobs', () => {
     expect(list.jobs.map((j: { id: string }) => j.id)).toEqual([json.job.id]);
   });
 
+  it('409 when the same post text is pasted twice, so one employer is never queued twice', async () => {
+    const rawText = 'Full Stack Developer\nCompany: Acme Co\nEmail: hr@acme.test\nReact Node.js';
+    const first = await post({ rawText, postUrl: 'https://facebook.com/groups/x/posts/1' });
+    expect(first.status).toBe(200);
+
+    // Same text, different URL and surrounding whitespace: still the same post.
+    const second = await post({ rawText: `  ${rawText}\n`, postUrl: 'https://facebook.com/groups/y/posts/2' });
+    expect(second.status).toBe(409);
+    expect(await second.json()).toEqual({ success: false, error: 'Job already saved' });
+
+    const count = await sql.query<{ n: string }>('SELECT count(*)::text AS n FROM job_applications');
+    expect(count.rows[0].n).toBe('1');
+  });
+
+  it('URL-only submissions with different URLs are different jobs, the same URL is a duplicate', async () => {
+    const a = await post({ postUrl: 'https://example.test/jobs/1' });
+    const b = await post({ postUrl: 'https://example.test/jobs/2' });
+    const aAgain = await post({ postUrl: 'https://example.test/jobs/1' });
+    expect(a.status).toBe(200);
+    expect(b.status).toBe(200);
+    expect(aAgain.status).toBe(409);
+  });
+
   it('409 "Job already saved" when the same external id exists, without leaking SQL', async () => {
     vi.spyOn(jobsDomain, 'parseJobText').mockReturnValue({
       id: 'fb-dup',

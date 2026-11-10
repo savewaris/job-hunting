@@ -1,6 +1,16 @@
+import { createHash } from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import { ScrapedJob } from '@/types/job';
+
+/**
+ * Stable id for a pasted post: the same text always maps to the same id, so the
+ * (source, external_id) unique index rejects a re-paste instead of creating a
+ * second card that could email the same employer twice.
+ */
+export function computeExternalId(rawText: string): string {
+  return `fb-${createHash('sha256').update(rawText.trim()).digest('hex')}`;
+}
 
 const jobsFilePath = path.resolve(process.cwd(), 'src', 'domain', 'jobs', 'jobs.json');
 
@@ -108,7 +118,7 @@ export function parseJobText(rawText: string, postUrl: string = ''): Partial<Scr
   }
 
   return {
-    id: `fb-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+    id: computeExternalId(text || `url:${postUrl}`),
     source: 'facebook',
     jobTitle,
     companyName,
