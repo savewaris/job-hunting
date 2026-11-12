@@ -343,45 +343,56 @@ export async function discoverFromCompanyCareers(
   let skippedDuplicates = 0;
   let errors = 0;
 
+  // Scan every company first, then take roles round-robin, so one company with many
+  // openings cannot use the whole quota and starve the others.
+  const queues: Array<Array<{ role: DiscoveredRole; status: ApplicationStatus }>> = [];
   for (const company of companies) {
-    if (discovered >= maxNewRoles) break;
     companiesScanned += 1;
     try {
       const roles = await scanCompanyCareers(company);
       await recordCompanyScanResult(sql, company.id, roles.length, null);
-
-      for (const role of roles) {
-        if (discovered >= maxNewRoles) break;
-        const status = classifyRoleStatus(role.jobTitle, role.location, role.jobDescription);
-        if (status === 'ignore') continue;
-        try {
-          await createApplication(sql, {
-            companyName: role.companyName,
-            jobTitle: role.jobTitle,
-            jobUrl: role.jobUrl,
-            location: role.location,
-            salaryRange: role.salaryRange,
-            status,
-            source: role.source,
-            externalId: role.externalId,
-            jobDescription: role.jobDescription,
-            requirements: role.requirements,
-            contactMethod: role.contactMethod,
-          });
-          discovered += 1;
-        } catch (err) {
-          if (err instanceof ConflictError) {
-            skippedDuplicates += 1;
-          } else {
-            throw err;
-          }
-        }
-      }
+      queues.push(
+        roles.flatMap((role) => {
+          const status = classifyRoleStatus(role.jobTitle, role.location, role.jobDescription);
+          return status === 'ignore' ? [] : [{ role, status }];
+        }),
+      );
     } catch (err) {
       errors += 1;
       const msg = err instanceof Error ? err.message : 'Scan failed';
       await recordCompanyScanResult(sql, company.id, 0, msg);
     }
+  }
+
+  for (let round = 0; discovered < maxNewRoles; round++) {
+    let tookAny = false;
+    for (const queue of queues) {
+      const entry = queue[round];
+      if (!entry) continue;
+      tookAny = true;
+      if (discovered >= maxNewRoles) break;
+      const { role, status } = entry;
+      try {
+        await createApplication(sql, {
+          companyName: role.companyName,
+          jobTitle: role.jobTitle,
+          jobUrl: role.jobUrl,
+          location: role.location,
+          salaryRange: role.salaryRange,
+          status,
+          source: role.source,
+          externalId: role.externalId,
+          jobDescription: role.jobDescription,
+          requirements: role.requirements,
+          contactMethod: role.contactMethod,
+        });
+        discovered += 1;
+      } catch (err) {
+        if (err instanceof ConflictError) skippedDuplicates += 1;
+        else errors += 1;
+      }
+    }
+    if (!tookAny) break;
   }
 
   return { companiesScanned, discovered, skippedDuplicates, errors };

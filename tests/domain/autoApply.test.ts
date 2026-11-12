@@ -9,7 +9,7 @@ import {
   listTargetCompanies,
   removeTargetCompany,
 } from '@/domain/companies/repo';
-import { classifyRoleStatus, fetchDirectCareerPageJobs } from '@/domain/companies/discover';
+import { classifyRoleStatus, discoverFromCompanyCareers, fetchDirectCareerPageJobs } from '@/domain/companies/discover';
 import {
   buildStandardFilledFields,
   inspectCareerFormHtml,
@@ -258,5 +258,39 @@ describe('own role resumes (RESUME_DIR)', () => {
     vi.stubEnv('RESUME_DIR', '');
     expect(readRoleResume('Full Stack Developer')).toBeNull();
     vi.unstubAllEnvs();
+  });
+});
+
+describe('discovery quota', () => {
+  it('shares the quota across companies instead of letting the first one use it all', async () => {
+    const sql = await createTestDb();
+    await sql.query('DELETE FROM target_companies'); // drop the seeded defaults
+    for (const slug of ['a', 'b', 'c']) {
+      await addTargetCompany(sql, {
+        name: `Co ${slug}`,
+        careersUrl: `https://boards.greenhouse.io/${slug}`,
+        atsType: 'greenhouse',
+        atsSlug: slug,
+      });
+    }
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        const slug = /boards\/(\w+)\/jobs/.exec(url)![1];
+        const jobs = [1, 2, 3, 4, 5].map((n) => ({
+          id: n,
+          title: `Full Stack Developer ${n}`,
+          absolute_url: `https://example.com/${slug}/${n}`,
+          location: { name: 'Bangkok' },
+          content: '',
+        }));
+        return new Response(JSON.stringify({ jobs }));
+      }),
+    );
+    const out = await discoverFromCompanyCareers(sql, 3);
+    vi.unstubAllGlobals();
+    expect(out.discovered).toBe(3);
+    const rows = await sql.query<{ company_name: string }>('SELECT company_name FROM job_applications ORDER BY company_name');
+    expect(rows.rows.map((r) => r.company_name)).toEqual(['Co a', 'Co b', 'Co c']);
   });
 });
