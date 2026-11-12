@@ -23,4 +23,15 @@ describe('isPostingLive', () => {
     expect(await isPostingLive('http://127.0.0.1:3000/x')).toBe(true);
     expect(spy).not.toHaveBeenCalled();
   });
+
+  it('never follows a redirect into a private host, and follows a normal one to a 404', async () => {
+    const f = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(null, { status: 302, headers: { location: 'http://127.0.0.1:3000/admin' } }));
+    expect(await isPostingLive('https://jobs.example.com/6')).toBe(true);
+    expect(f).toHaveBeenCalledTimes(1); // the loopback hop was not fetched
+
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(null, { status: 301, headers: { location: '/gone' } }))
+      .mockResolvedValueOnce(new Response('', { status: 404 }));
+    expect(await isPostingLive('https://jobs.example.com/7')).toBe(false);
+  });
 });
