@@ -5,7 +5,9 @@ import {
   markResumed,
   type InboxItem,
 } from "@/domain/inbox/repo";
+import { skipApplication } from "@/domain/applications/repo";
 import type { Settings } from "@/domain/settings/repo";
+import { isPostingLive } from "@/lib/liveness";
 import { discoverFromCompanyCareers } from "@/domain/companies/discover";
 import { generateMasterProfileCoverLetter } from "@/domain/tailoring/coverLetter";
 import { prepareCareerFormApplication } from "@/domain/ats/formFiller";
@@ -120,6 +122,11 @@ export const prepareApplicationDraftsStep: RunStep = {
         const isEmail =
           contactMethod?.type === "email" && Boolean(contactMethod.value);
         const applyUrl = contactMethod?.value || job.job_url || "";
+
+        if (job.job_url && !(await isPostingLive(job.job_url))) {
+          await skipApplication(ctx.sql, job.id, "other", "Posting is closed");
+          continue;
+        }
 
         if (!isEmail && applyUrl) {
           const formOutcome = await prepareCareerFormApplication(ctx.sql, {

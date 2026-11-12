@@ -15,6 +15,7 @@ import {
   buildStandardFilledFields,
   inspectCareerFormHtml,
 } from '@/domain/ats/formFiller';
+import { isPostingLive } from '@/lib/liveness';
 import { prepareApplicationDraftsStep } from '@/domain/runs/steps';
 import { createApplication } from '@/domain/applications/repo';
 import { listOpenInbox } from '@/domain/inbox/repo';
@@ -24,6 +25,8 @@ let sql: Sql;
 beforeEach(async () => {
   sql = await createTestDb();
 });
+
+vi.mock('@/lib/liveness', () => ({ isPostingLive: vi.fn(async () => true) }));
 
 vi.mock('@/lib/renderPage', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/renderPage')>()),
@@ -201,6 +204,37 @@ describe('Slice C: ATS Career Form Inspector & Draft Preparation', () => {
     const run = () => prepareApplicationDraftsStep.run({ sql, resumed: [], settings, now: new Date() });
     expect((await run()).drafted).toBe(1);
     expect((await run()).drafted).toBe(0); // one-per-day limit is used up
+  });
+
+  it('a closed posting is skipped, not drafted', async () => {
+    const closed = await createApplication(sql, {
+      companyName: 'GoneCo',
+      jobTitle: 'Full Stack Engineer',
+      jobUrl: 'https://example.com/careers/gone',
+      status: 'wishlist',
+      contactMethod: { type: 'form', value: 'https://example.com/careers/gone' },
+    });
+    vi.mocked(isPostingLive).mockResolvedValueOnce(false);
+    const settings = await getSettings(sql);
+    const out = await prepareApplicationDraftsStep.run({ sql, resumed: [], settings, now: new Date() });
+    expect(out.drafted).toBe(0);
+    const row = await sql.query<{ status: string }>('SELECT status FROM job_applications WHERE id = $1::uuid', [closed.id]);
+    expect(row.rows[0].status).toBe('skipped');
+  });
+
+  it('a role reposted under a new id is not added twice', async () => {
+    await sql.query('DELETE FROM target_companies');
+    await createApplication(sql, { companyName: 'Repost Co', jobTitle: 'Backend Engineer', status: 'wishlist' });
+    const spy = vi.spyOn(globalThis, 'fetch').mockImplementation(async () =>
+      new Response(JSON.stringify({ jobs: [{ id: 99, title: 'backend engineer', absolute_url: 'https://boards.greenhouse.io/repostco/jobs/99', location: { name: 'Remote' }, content: '' }, { id: 100, title: 'Full Stack Engineer', absolute_url: 'https://boards.greenhouse.io/repostco/jobs/100', location: { name: 'Remote' }, content: '' }] })),
+    );
+    await addTargetCompany(sql, { name: 'Repost Co', careersUrl: 'https://boards.greenhouse.io/repostco' });
+    const summary = await discoverFromCompanyCareers(sql, 5);
+    spy.mockRestore();
+    expect(summary.discovered).toBe(1); // only the new Full Stack role
+    expect(summary.skippedDuplicates).toBe(1);
+    const rows = await sql.query('SELECT 1 FROM job_applications WHERE lower(company_name) = $1', ['repost co']);
+    expect(rows.rows).toHaveLength(2);
   });
 
   it('a malformed job does not stop the rest of the batch', async () => {

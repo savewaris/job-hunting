@@ -399,6 +399,15 @@ export async function discoverFromCompanyCareers(
       if (discovered >= maxNewRoles) break;
       const { role, status } = entry;
       try {
+        // Same role reposted under a new id: skip it (case-insensitive company + title).
+        const same = await sql.query(
+          'SELECT 1 FROM job_applications WHERE lower(company_name) = lower($1) AND lower(job_title) = lower($2) LIMIT 1',
+          [role.companyName, role.jobTitle],
+        );
+        if (same.rows.length > 0) {
+          skippedDuplicates += 1;
+          continue;
+        }
         await createApplication(sql, {
           companyName: role.companyName,
           jobTitle: role.jobTitle,
