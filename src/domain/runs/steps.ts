@@ -1,14 +1,14 @@
-import type { Sql } from '@/lib/sql';
+import type { Sql } from "@/lib/sql";
 import {
   createInboxItem,
   listAnsweredUnresumed,
   markResumed,
   type InboxItem,
-} from '@/domain/inbox/repo';
-import type { Settings } from '@/domain/settings/repo';
-import { discoverFromCompanyCareers } from '@/domain/companies/discover';
-import { generateMasterProfileCoverLetter } from '@/domain/tailoring/coverLetter';
-import { prepareCareerFormApplication } from '@/domain/ats/formFiller';
+} from "@/domain/inbox/repo";
+import type { Settings } from "@/domain/settings/repo";
+import { discoverFromCompanyCareers } from "@/domain/companies/discover";
+import { generateMasterProfileCoverLetter } from "@/domain/tailoring/coverLetter";
+import { prepareCareerFormApplication } from "@/domain/ats/formFiller";
 
 export interface RunContext {
   sql: Sql;
@@ -25,7 +25,7 @@ export interface RunStep {
 
 /** Picks up inbox items the user has answered since the last run. */
 export const resumeAnsweredInbox: RunStep = {
-  name: 'resumeAnsweredInbox',
+  name: "resumeAnsweredInbox",
   async run(ctx) {
     const items = await listAnsweredUnresumed(ctx.sql);
     ctx.resumed = items;
@@ -42,7 +42,7 @@ export const resumeAnsweredInbox: RunStep = {
  * company career URLs) and creates matching `wishlist` / `maybe` applications.
  */
 export const discoverCompanyCareersStep: RunStep = {
-  name: 'discoverCompanyCareers',
+  name: "discoverCompanyCareers",
   async run(ctx) {
     return discoverFromCompanyCareers(ctx.sql, ctx.settings.maxDailyDrafts);
   },
@@ -54,9 +54,30 @@ export const discoverCompanyCareersStep: RunStep = {
  * up to `ctx.settings.maxDailyDrafts`.
  */
 export const prepareApplicationDraftsStep: RunStep = {
-  name: 'prepareApplicationDrafts',
+  name: "prepareApplicationDrafts",
   async run(ctx) {
-    const limit = Math.max(1, Math.min(ctx.settings.maxDailyDrafts, 50));
+    // maxDailyDrafts is per local day: subtract approvals already queued today.
+    const dayStart = new Date(
+      ctx.now.getFullYear(),
+      ctx.now.getMonth(),
+      ctx.now.getDate(),
+    );
+    const today = await ctx.sql.query<{ n: number }>(
+      `SELECT count(*)::int AS n FROM inbox_items WHERE kind = 'approval' AND created_at >= $1::timestamptz`,
+      [dayStart.toISOString()],
+    );
+    const limit = Math.max(
+      0,
+      Math.min(ctx.settings.maxDailyDrafts, 50) - today.rows[0].n,
+    );
+    if (limit === 0)
+      return {
+        drafted: 0,
+        parkedQuestions: 0,
+        captchaStopped: 0,
+        failed: 0,
+        limitReached: true,
+      };
     const candidates = await ctx.sql.query<{
       id: string;
       company_name: string;
@@ -84,39 +105,71 @@ export const prepareApplicationDraftsStep: RunStep = {
     let drafted = 0;
     let parkedQuestions = 0;
     let captchaStopped = 0;
+    let failed = 0;
 
     for (const job of candidates.rows) {
-      const contactMethod =
-        typeof job.contact_method === 'string'
-          ? (JSON.parse(job.contact_method) as { type?: string; value?: string })
-          : job.contact_method;
-      const isEmail = contactMethod?.type === 'email' && Boolean(contactMethod.value);
-      const applyUrl = contactMethod?.value || job.job_url || '';
+      // One malformed job must not block the rest of the batch.
+      try {
+        const contactMethod =
+          typeof job.contact_method === "string"
+            ? (JSON.parse(job.contact_method) as {
+                type?: string;
+                value?: string;
+              })
+            : job.contact_method;
+        const isEmail =
+          contactMethod?.type === "email" && Boolean(contactMethod.value);
+        const applyUrl = contactMethod?.value || job.job_url || "";
 
-      if (!isEmail && applyUrl) {
-        const formOutcome = await prepareCareerFormApplication(ctx.sql, {
-          id: job.id,
-          companyName: job.company_name,
-          jobTitle: job.job_title,
-          applyUrl,
-        });
+        if (!isEmail && applyUrl) {
+          const formOutcome = await prepareCareerFormApplication(ctx.sql, {
+            id: job.id,
+            companyName: job.company_name,
+            jobTitle: job.job_title,
+            applyUrl,
+          });
 
-        if (formOutcome.status === 'captcha_blocked') {
+          if (formOutcome.status === "captcha_blocked") {
+            await createInboxItem(ctx.sql, {
+              jobApplicationId: job.id,
+              kind: "error",
+              prompt: `CAPTCHA detected on ${job.company_name} career form`,
+              payload: {
+                detail: formOutcome.errorDetail,
+                applyUrl,
+              },
+            });
+            captchaStopped += 1;
+            continue;
+          }
+
+          if (formOutcome.status === "needs_questions") {
+            parkedQuestions += formOutcome.pendingQuestions.length;
+            continue;
+          }
+
+          const coverLetter = await generateMasterProfileCoverLetter({
+            companyName: job.company_name,
+            jobTitle: job.job_title,
+            jobDescription: job.job_description,
+            requirements: job.requirements,
+            location: job.location,
+          });
+
           await createInboxItem(ctx.sql, {
             jobApplicationId: job.id,
-            kind: 'error',
-            prompt: `CAPTCHA detected on ${job.company_name} career form`,
+            kind: "approval",
+            prompt: `Approve career-page application & cover letter for ${job.company_name} (${job.job_title})?`,
             payload: {
-              detail: formOutcome.errorDetail,
+              channel: "career_form",
               applyUrl,
+              preview: coverLetter.letter,
+              filledFields: formOutcome.filledFields,
+              usedAi: coverLetter.usedAi,
+              embeddedLinks: coverLetter.embeddedLinks,
             },
           });
-          captchaStopped += 1;
-          continue;
-        }
-
-        if (formOutcome.status === 'needs_questions') {
-          parkedQuestions += formOutcome.pendingQuestions.length;
+          drafted += 1;
           continue;
         }
 
@@ -130,48 +183,27 @@ export const prepareApplicationDraftsStep: RunStep = {
 
         await createInboxItem(ctx.sql, {
           jobApplicationId: job.id,
-          kind: 'approval',
-          prompt: `Approve career-page application & cover letter for ${job.company_name} (${job.job_title})?`,
+          kind: "approval",
+          prompt: isEmail
+            ? `Approve email application (${contactMethod?.value}) & cover letter for ${job.company_name}?`
+            : `Approve tailored cover letter & resume for ${job.company_name}?`,
           payload: {
-            channel: 'career_form',
-            applyUrl,
+            channel: isEmail ? "email" : "career_form",
+            recipientEmail: isEmail ? contactMethod?.value : undefined,
+            applyUrl: applyUrl || undefined,
             preview: coverLetter.letter,
-            filledFields: formOutcome.filledFields,
             usedAi: coverLetter.usedAi,
             embeddedLinks: coverLetter.embeddedLinks,
           },
         });
         drafted += 1;
-        continue;
+      } catch (err) {
+        failed += 1;
+        console.error("[runs:draft]", job.id, err);
       }
-
-      const coverLetter = await generateMasterProfileCoverLetter({
-        companyName: job.company_name,
-        jobTitle: job.job_title,
-        jobDescription: job.job_description,
-        requirements: job.requirements,
-        location: job.location,
-      });
-
-      await createInboxItem(ctx.sql, {
-        jobApplicationId: job.id,
-        kind: 'approval',
-        prompt: isEmail
-          ? `Approve email application (${contactMethod?.value}) & cover letter for ${job.company_name}?`
-          : `Approve tailored cover letter & resume for ${job.company_name}?`,
-        payload: {
-          channel: isEmail ? 'email' : 'career_form',
-          recipientEmail: isEmail ? contactMethod?.value : undefined,
-          applyUrl: applyUrl || undefined,
-          preview: coverLetter.letter,
-          usedAi: coverLetter.usedAi,
-          embeddedLinks: coverLetter.embeddedLinks,
-        },
-      });
-      drafted += 1;
     }
 
-    return { drafted, parkedQuestions, captchaStopped };
+    return { drafted, parkedQuestions, captchaStopped, failed };
   },
 };
 

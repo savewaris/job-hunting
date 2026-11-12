@@ -97,3 +97,17 @@ describe('POST /api/facebook/scroll-feed', () => {
     expect(log).toHaveBeenCalled();
   });
 });
+
+describe('scrape lock', () => {
+  it('409 when another Facebook scrape already holds the browser profile; releases afterwards', async () => {
+    const { tryLockScrape } = await import('@/lib/scrapeLock');
+    const release = tryLockScrape();
+    expect(release).not.toBeNull();
+    const res = await scrapePost(req());
+    expect(res.status).toBe(409);
+    release?.();
+    vi.spyOn(jobsDomain, 'getSavedJobs').mockReturnValue(legacyJobs);
+    expect((await scrapePost(req())).status).toBe(200);
+    expect((await scrollPost(req())).status).toBe(200);
+  });
+});

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Sql } from '@/lib/sql';
 import { createTestDb } from '../helpers/testDb';
 import { generateTailoredResumePdf, rankProjectsForJob } from '@/domain/tailoring/resumePdf';
@@ -9,7 +9,7 @@ import {
   listTargetCompanies,
   removeTargetCompany,
 } from '@/domain/companies/repo';
-import { classifyRoleStatus } from '@/domain/companies/discover';
+import { classifyRoleStatus, fetchDirectCareerPageJobs } from '@/domain/companies/discover';
 import {
   buildStandardFilledFields,
   inspectCareerFormHtml,
@@ -179,5 +179,50 @@ describe('Slice C: ATS Career Form Inspector & Draft Preparation', () => {
     );
     expect(String(approval?.payload?.preview ?? '')).toContain('https://github.com/savewaris');
     expect(approval?.payload?.filledFields).toBeDefined();
+  });
+
+  it('daily limit counts approvals already queued today', async () => {
+    for (const n of ['A', 'B']) {
+      await createApplication(sql, {
+        companyName: n,
+        jobTitle: 'Full Stack Engineer',
+        jobUrl: `https://example.com/careers/${n}`,
+        status: 'wishlist',
+        contactMethod: { type: 'form', value: `https://example.com/careers/${n}` },
+      });
+    }
+    const settings = { ...(await getSettings(sql)), maxDailyDrafts: 1 };
+    const run = () => prepareApplicationDraftsStep.run({ sql, resumed: [], settings, now: new Date() });
+    expect((await run()).drafted).toBe(1);
+    expect((await run()).drafted).toBe(0); // one-per-day limit is used up
+  });
+
+  it('a malformed job does not stop the rest of the batch', async () => {
+    await createApplication(sql, {
+      companyName: 'Good',
+      jobTitle: 'Full Stack Engineer',
+      status: 'wishlist',
+      contactMethod: { type: 'form', value: 'https://example.com/careers/good' },
+    });
+    const bad = await createApplication(sql, { companyName: 'Bad', jobTitle: 'Full Stack Engineer', status: 'wishlist' });
+    await sql.query(`UPDATE job_applications SET contact_method = to_jsonb('{not json'::text) WHERE id = $1::uuid`, [bad.id]);
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const out = await prepareApplicationDraftsStep.run({ sql, resumed: [], settings: await getSettings(sql), now: new Date() });
+    expect(out).toMatchObject({ drafted: 1, failed: 1 });
+  });
+});
+
+describe('direct career page scan', () => {
+  it('ignores navigation links like "Developers"; keeps links under /careers or /jobs', async () => {
+    const html = `<a href="/developers">Developers</a><a href="/docs/react">React docs</a>
+      <a href="/careers/42">Full Stack Developer</a>`;
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(html)));
+    const roles = await fetchDirectCareerPageJobs({
+      careersUrl: 'https://acme.test/careers',
+      name: 'Acme',
+      locationHint: 'Bangkok',
+    } as never);
+    vi.unstubAllGlobals();
+    expect(roles.map((r) => r.jobTitle)).toEqual(['Full Stack Developer']);
   });
 });

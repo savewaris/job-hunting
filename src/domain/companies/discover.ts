@@ -30,6 +30,8 @@ const SENIOR_MAYBE_RE =
 const LOCATION_ALLOW_RE =
   /\b(bangkok|thailand|remote|anywhere|global|apac|asia|distributed|work from home|wfh)\b/i;
 
+const JOB_LINK_RE = /\/(jobs?|careers?|positions?|openings?|vacanc\w*)/i;
+
 const EMAIL_RE = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/;
 
 export function classifyRoleStatus(
@@ -292,7 +294,8 @@ export async function fetchDirectCareerPageJobs(
   $('a[href]').each((_i, el) => {
     const text = $(el).text().replace(/\s+/g, ' ').trim();
     const href = $(el).attr('href');
-    if (!href || !text || text.length > 120) return;
+    // Nav links such as "Developers" or "React docs" match the role regex; only job-looking URLs count.
+    if (!href || !text || text.length > 120 || !JOB_LINK_RE.test(href)) return;
     const status = classifyRoleStatus(text, company.locationHint ?? 'Bangkok / Remote');
     if (status === 'ignore') return;
     try {
