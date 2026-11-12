@@ -12,6 +12,7 @@ import {
 import { moveApplication } from '@/domain/applications/repo';
 import { generateTailoredResumePdf } from '@/domain/tailoring/resumePdf';
 import { ensureMasterProfileLinks } from '@/domain/tailoring/coverLetter';
+import { UNKNOWN_COMPANY } from '@/domain/jobs';
 import { sendApplicationEmail } from '@/lib/mailer';
 import { getCandidateContact } from '@/domain/profile';
 
@@ -76,6 +77,10 @@ export async function POST(
               : job.contact_method;
 
           if (contactMethod?.type === 'email' && contactMethod.value) {
+            if (job.company_name === UNKNOWN_COMPANY) {
+              // Caught below: the approval is reopened and nothing is sent.
+              throw new Error('Company name is unknown, so the email would go to a placeholder');
+            }
             const pdf = await generateTailoredResumePdf({
               companyName: job.company_name,
               jobTitle: job.job_title,

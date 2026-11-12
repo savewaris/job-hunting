@@ -3,6 +3,9 @@ import fs from 'fs';
 import path from 'path';
 import { ScrapedJob } from '@/types/job';
 
+/** Placeholder when a post names no company; approval refuses to email it. */
+export const UNKNOWN_COMPANY = 'Unknown company';
+
 /**
  * Stable id for a pasted post: the same text always maps to the same id, so the
  * (source, external_id) unique index rejects a re-paste instead of creating a
@@ -101,7 +104,7 @@ export function parseJobText(rawText: string, postUrl: string = ''): Partial<Scr
   }
 
   // 6. Deduce Company Name
-  let companyName = 'Thai Tech Employer';
+  let companyName = UNKNOWN_COMPANY;
   const companyMatch = text.match(/(?:company|บริษัท|บ\.)\s*[:]?\s*([^\n,]+)/i);
   if (companyMatch && companyMatch[1]) {
     companyName = companyMatch[1].trim();
@@ -126,7 +129,7 @@ export function parseJobText(rawText: string, postUrl: string = ''): Partial<Scr
     location: text.toLowerCase().includes('remote') || text.includes('wfh') ? 'Bangkok, Thailand (Hybrid/Remote)' : 'Bangkok, Thailand',
     salaryRange: salaryRange || 'Negotiable (THB)',
     jobDescription: text.slice(0, 1500),
-    requirements: matchedStack.length > 0 ? Array.from(new Set(matchedStack)) : ['TypeScript', 'React', 'Node.js'],
+    requirements: Array.from(new Set(matchedStack)),
     contactMethod,
     rawPostContent: text,
     createdAt: new Date().toISOString(),

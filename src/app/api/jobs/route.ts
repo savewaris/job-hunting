@@ -1,7 +1,7 @@
 import { getDb } from '@/lib/sql';
 import { fail, ok } from '@/lib/http';
 import { ConflictError } from '@/lib/errors';
-import { parseJobText } from '@/domain/jobs';
+import { parseJobText, UNKNOWN_COMPANY } from '@/domain/jobs';
 import { createApplication } from '@/domain/applications/repo';
 import { fromScrapedJob, listScrapedJobs } from '@/domain/applications/legacy';
 import { ScrapedJob } from '@/types/job';
@@ -36,13 +36,13 @@ export async function POST(req: Request) {
     const fullJob: ScrapedJob = {
       id: parsed.id || `fb-${Date.now()}`,
       source: 'facebook',
-      jobTitle: parsed.jobTitle || 'Full Stack Developer',
-      companyName: parsed.companyName || 'Thai Tech Employer',
+      jobTitle: parsed.jobTitle || 'Software Engineer',
+      companyName: parsed.companyName || UNKNOWN_COMPANY,
       jobUrl: postUrl || 'https://facebook.com',
       location: parsed.location || 'Bangkok, Thailand',
       salaryRange: parsed.salaryRange || 'Negotiable (THB)',
       jobDescription: parsed.jobDescription || '',
-      requirements: parsed.requirements || ['TypeScript', 'React'],
+      requirements: parsed.requirements || [],
       contactMethod: parsed.contactMethod,
       rawPostContent: rawText || parsed.jobDescription,
       createdAt: new Date().toISOString(),

@@ -109,6 +109,12 @@ describe('POST /api/jobs', () => {
     expect(await res.json()).toEqual({ success: false, error: 'Job already saved' });
   });
 
+  it('invents no company or requirements when the post has none', async () => {
+    const json = await (await post({ rawText: 'Hiring a developer, send CV to hr@x.test' })).json();
+    expect(json.job.companyName).toBe(jobsDomain.UNKNOWN_COMPANY);
+    expect(json.job.requirements).toEqual([]);
+  });
+
   it('500 with a generic message and logs the real error', async () => {
     const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     setDb(failingSql);

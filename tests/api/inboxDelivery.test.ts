@@ -4,6 +4,7 @@ import type { Sql } from '@/lib/sql';
 import { createApplication } from '@/domain/applications/repo';
 import { createInboxItem } from '@/domain/inbox/repo';
 import { POST } from '@/app/api/inbox/[id]/resolve/route';
+import { UNKNOWN_COMPANY } from '@/domain/jobs';
 import * as mailer from '@/lib/mailer';
 import * as resumePdf from '@/domain/tailoring/resumePdf';
 import { createTestDb } from '../helpers/testDb';
@@ -110,6 +111,16 @@ describe('approving an email application', () => {
     expect(JSON.stringify(json)).not.toContain('me@gmail.com');
 
     expect(await appStatus()).toBe('wishlist');
+    expect((await itemRow()).status).toBe('open');
+  });
+
+  it('refuses to email a job whose company is the unknown placeholder; nothing sent, approval reopened', async () => {
+    await sql.query('UPDATE job_applications SET company_name = $2 WHERE id = $1::uuid', [jobId, UNKNOWN_COMPANY]);
+    const send = vi.spyOn(mailer, 'sendApplicationEmail').mockResolvedValue({ sent: true, simulated: false, recipient: 'hr@acme.test' });
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    expect((await approve()).status).toBe(502);
+    expect(send).not.toHaveBeenCalled();
     expect((await itemRow()).status).toBe('open');
   });
 
