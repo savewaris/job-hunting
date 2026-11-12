@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Sql } from '@/lib/sql';
-import { renderPage } from '@/lib/renderPage';
+import { renderPage, isPrivateHost } from '@/lib/renderPage';
 import { createTestDb } from '../helpers/testDb';
 import { generateTailoredResumePdf, rankProjectsForJob, readRoleResume } from '@/domain/tailoring/resumePdf';
 import { getMasterProfile } from '@/domain/profile';
@@ -25,7 +25,10 @@ beforeEach(async () => {
   sql = await createTestDb();
 });
 
-vi.mock('@/lib/renderPage', () => ({ renderPage: vi.fn(async () => null) }));
+vi.mock('@/lib/renderPage', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/renderPage')>()),
+  renderPage: vi.fn(async () => null),
+}));
 
 describe('Slice A: Tailored Resume PDF Generator', () => {
   it('generates a valid non-empty PDF buffer from master-profile.json', async () => {
@@ -323,5 +326,16 @@ describe('career page rendering fallback', () => {
     vi.unstubAllGlobals();
     expect(roles.map((r) => r.jobTitle)).toEqual(['Full Stack Developer']);
     expect(renderPage).toHaveBeenCalledWith('https://acme.test/jobs');
+  });
+});
+
+describe('renderPage private-host guard', () => {
+  it('blocks loopback, private and link-local hosts but not public ones', () => {
+    for (const h of ['localhost', '127.0.0.1', '[::1]', '10.1.2.3', '192.168.0.5', '172.20.0.1', '169.254.169.254', 'foo.localhost', 'db.internal', 'fd00::1']) {
+      expect(isPrivateHost(h), h).toBe(true);
+    }
+    for (const h of ['careers.lmwn.com', '8.8.8.8', '172.32.0.1', 'cal.com']) {
+      expect(isPrivateHost(h), h).toBe(false);
+    }
   });
 });
