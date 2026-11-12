@@ -1,65 +1,64 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Claude Code (claude.ai/code) and AI agents when working with code in this repository.
 
 ## Commands
 
 ```bash
-npm run dev              # Next.js dev server, bound to 127.0.0.1:3000 (falls back to 3001 if taken)
+npm run dev               # Next.js dev server bound to 127.0.0.1:3000 (next dev -H 127.0.0.1)
 npm run build             # production build
-npm run start              # serve production build
-npm run lint                # next lint
-npm test                     # vitest run — unit tests for domain modules and API routes
+npm run start             # serve production build bound to 127.0.0.1:3000 (next start -H 127.0.0.1)
+npm run lint              # next lint (currently requires ESLint setup if invoked interactively)
+npm test                  # vitest run (use npx vitest run --maxWorkers=4 under heavy CPU load)
 
-npm run sync-profile      # node scripts/sync-profile.mjs — pulls resume data from a sibling PersonalWebsite project's Neon/Prisma DB into src/domain/profile/master-profile.json
+npm run db:migrate        # tsx scripts/migrate.ts — applies supabase/migrations/*.sql against DATABASE_URL
+npm run db:import-legacy  # tsx scripts/import-legacy-jobs.ts — imports src/domain/jobs/jobs.json into job_applications
+npm run db:seed-dev       # tsx scripts/seed-dev.ts — seeds local DEV_DB_DIR PGlite store (pass -- --force to reseed)
+
+npm run sync-profile      # node scripts/sync-profile.mjs — pulls resume data from sibling PersonalWebsite Neon/Prisma DB into src/domain/profile/master-profile.json
+npm run scrape:fb         # node scripts/facebook-cli.mjs — standalone Playwright CLI for sourcing jobs from Facebook
 ```
 
-`npm run dev` binds to `127.0.0.1` rather than the default `0.0.0.0` so the app (which sends real emails and holds a live Supabase session) isn't reachable from the rest of the LAN.
+Always start the server via `npm run dev` or `npm run start` so that `-H 127.0.0.1` is passed; a bare `next dev` or `next start` binds to all network interfaces (`0.0.0.0`).
 
 ## Architecture
 
-This is a Next.js 14 App Router app implementing an end-to-end job-application pipeline: capture a job post, tailor a resume/cover-letter to it with AI, review the drafted cold email, and send it with a generated PDF resume attached.
+This is a Next.js 14 App Router application for autonomous job hunting, combining a local-only dashboard (Inbox, reusable Answer Bank, Kanban Board, Metrics, Settings, and Run orchestrator) with Master Profile syncing and Facebook job sourcing.
 
-### Data flow: Supabase, not local JSON files
+### Data flow: Postgres via `src/lib/sql.ts` (plus Master Profile JSON)
 
-All persistence goes through `@supabase/supabase-js` against the tables defined in `supabase/schema.sql` (`job_applications`, `master_profiles`, `tailored_documents`, `cold_emails`, `pipeline_settings`, plus `interviews`/`offers` which nothing yet writes to). There is no Supabase auth flow — this is a single personal user, anon key only — so `schema.sql` defines `auth.uid()`-based RLS policies and then immediately replaces them with permissive `USING (true)` policies. Every route in the app is correspondingly unauthenticated by design; do not add auth to just one route without addressing the whole app.
+Application, inbox, answer-bank, settings, and run state live in Postgres and are accessed server-side through the `Sql` interface in `src/lib/sql.ts`:
 
-`src/lib/supabase.ts` is the one `getSupabaseClient()` used everywhere. It passes a custom `fetch` with `cache: 'no-store'` into `createClient` — without this, Next.js's Data Cache patches the global `fetch` and silently caches Supabase's own internal GET requests, so toggled settings or newly-written rows can appear stale on the next read even from a Server Component marked `dynamic = 'force-dynamic'`.
+- **Production / Supabase Postgres (`DATABASE_URL`)**: `getDb()` creates a `pg` connection pool validated by `assertSecureConnection` (requires TLS for non-loopback hosts, strict allow-list of query parameters, and never passes the raw unvalidated URL string to `Pool`).
+- **Local Dev Store (`DEV_DB_DIR`)**: When `DEV_DB_DIR` is set (e.g. `.dev-db`) and `DATABASE_URL` is unset in non-production, `getDb()` lazily opens a persistent on-disk PGlite database and applies `supabase/migrations/*.sql`.
+- **Automated Tests (`tests/helpers/testDb.ts`)**: `createTestDb()` spins up an in-memory PGlite instance with real migrations applied and injects it via `setDb()` (`NODE_ENV === 'test'` only).
+- **Master Profile (`src/domain/profile/master-profile.json`)**: Remains a flat JSON file checked into the repo and regenerated wholesale by `scripts/sync-profile.mjs`.
+- **Facebook Job Sourcing (`src/domain/jobs/jobs.json`)**: Standalone Playwright scraper scripts (`scripts/*.mjs`) still append to `jobs.json`. `npm run db:import-legacy` and the web API scraper routes bridge `jobs.json` into the `job_applications` Postgres table idempotently via `syncLegacyJobs(sql)` / `importLegacyJobs(sql, jobs)` in `src/domain/applications/legacy.ts`. (Legacy fields `author`, `postedAt`, and `matchScore` have no DB column and remain only in `jobs.json`.)
 
-`src/domain/profile/master-profile.json` is the only remaining flat-file store, regenerated wholesale by `scripts/sync-profile.mjs`; it isn't part of the Supabase pipeline.
+### Strict RLS & Localhost-Only Security Model
 
-### The pipeline: `PipelineStage` and `src/domain/pipeline/`
+- **Strict RLS (No Anon Access)**: Supabase is used strictly as hosted Postgres via the server-side `DATABASE_URL`. Migration `0001_auto_apply_core.sql` enables Row Level Security on all tables (`job_applications`, `answer_bank`, `inbox_items`, `skip_reasons`, `app_settings`, `runs`) with **no policies**, and drops the legacy permissive policy on `job_applications`. Browser / `NEXT_PUBLIC_SUPABASE_ANON_KEY` queries via PostgREST cannot read or write any rows.
+- **Localhost Binding & Middleware Guard**: The server binds to `127.0.0.1` and `src/middleware.ts` (`src/lib/localOnly.ts`) enforces that `Host` is loopback (`localhost`, `127.0.0.1`, `[::1]`) and blocks cross-site requests via `Origin` and `Sec-Fetch-Site` checks. `next.config.js` sets `Content-Security-Policy: frame-ancestors 'none'` and `X-Frame-Options: DENY` on all routes.
 
-Every captured job (`job_applications.pipeline_stage`, type `PipelineStage` in `src/types/job.ts`) moves through `new → tailoring → tailored → sent`, or `error` on failure (retryable back to `tailoring`).
+### Facebook job sourcing: three separate entry points, one CLI
 
-- `src/domain/pipeline/tailorJob.ts` — `tailorJob(jobId)` atomically claims a job via `.update(...).eq('id', jobId).in('pipeline_stage', ['new', 'error']).select().maybeSingle()`; a `null` result means another caller already claimed it (idempotent, race-safe). On success it calls `generateTailoredContent` (`src/lib/ai-tailor-client.ts`, backed by `@savewaris/ai-battery`'s multi-provider fallback — Gemini/Groq/OpenRouter/Cerebras) with a prompt built from the real master profile and the job, writes a `tailored_documents` row and (if the job has an email contact) a `cold_emails` draft, then marks the job `tailored`. Any failure marks the job `error` with `stage_error` set and rethrows.
-- `src/domain/pipeline/runStage.ts` — `runTailorNow(jobId)` is the manual entry point (only valid from `new`/`error`); `advancePipeline()` is the auto-tailor entry point gated by `pipeline_settings` (see below).
-- `src/app/api/jobs/[id]/tailor/route.ts` — POST route the UI's "Tailor Now" button calls.
-- `src/app/api/pipeline-settings/route.ts` — reads/writes the single `pipeline_settings` row (`auto_ingest_api_sources`, `auto_tailor`, `max_daily_auto_tailor`) that gates whether newly-captured jobs are tailored automatically instead of requiring a manual click.
+Facebook scraping is Playwright-based and **always runs non-headless** against a persistent browser profile at `.browser-sessions/facebook-profile/` (so a manual login persists across runs). There are three ways to trigger it:
 
-### Job capture: paste-only, no automation
+- `scripts/facebook-cli.mjs` (`npm run scrape:fb`) — standalone terminal CLI. `--url <postUrl>` scrapes one post directly; with no args it opens an interactive feed-scroll mode. Run `npm run db:import-legacy` afterwards (or trigger a web scrape) to copy newly scraped jobs from `jobs.json` into Postgres.
+- `src/app/api/facebook/*` routes (`init-session`, `status`, `scroll-feed`) — spawn/poll the underlying scripts from the web UI via `child_process` and sync `jobs.json` into Postgres.
+- `src/app/api/jobs/scrape-facebook/route.ts` — spawns `scripts/facebook-scraper.mjs` for a single-URL scrape triggered from the UI and syncs `jobs.json` into Postgres.
 
-Facebook/job-board sourcing is deliberately human-driven: the user pastes raw post text into the UI, and `POST /api/jobs` (`createJobFromFacebookPaste` / `parseJobText` in `src/domain/jobs/index.ts`) extracts title/company/salary/tech-stack/contact-method and dedupes via `computeExternalId` (a SHA-256 hash of the raw text). There is no autonomous login, session, or scraping — a prior Playwright-based Facebook scraper was deliberately removed as a ban/ToS risk. Do not reintroduce browser automation against a real Facebook account.
-
-### Cold-email review and send
-
-`src/domain/cold-emails/` is the read/write boundary for the `cold_emails` table. `src/components/cold-emails/ColdEmailQueue.tsx` lists `draft`-status emails with editable subject/body (saved via `PATCH /api/cold-emails/[id]`, which whitelists only `subject`/`body` and rejects edits once `status = 'sent'`). Sending (`POST /api/cold-emails/[id]/send`) is idempotent — it short-circuits if the email is already `sent` — looks up the matching `tailored_documents` resume row (404s with a clear error if missing), renders it to a PDF via `src/lib/pdf/generateResumePdf.ts` (`@react-pdf/renderer`), and sends it with `nodemailer` using the `EMAIL_*` env vars. On success it marks the `cold_emails` row `sent` and the parent `job_applications` row `pipeline_stage = 'sent'` / `status = 'applied'`; a failure in that bookkeeping step is logged but does not undo an email that already sent.
-
-`src/app/api/tailored-documents/[id]/pdf/route.ts` looks resumes up by `job_application_id` + `doc_type = 'resume'` (not the `tailored_documents` row's own `id` — every caller only has the job's id).
+All parsing logic (title/company/salary/tech-stack/contact-method extraction from raw Thai/English post text) is duplicated between `src/domain/jobs/index.ts` (`parseJobText`, used by `/api/jobs` for pasted text) and `scripts/facebook-cli.mjs`. Keep both in sync if you change the extraction heuristics.
 
 ### Profile sync has a hard-coded external dependency
 
-`scripts/sync-profile.mjs` imports Prisma directly from a sibling project at the absolute path `C:\save\Projects\PersonalWebsite` and connects to that project's Neon Postgres instance to pull skills/experience/education/projects. This only works on a machine with that sibling project present, and the DB connection string is currently hard-coded in the script rather than read from env. Treat this script as environment-specific tooling, not a portable part of the app.
-
-### Environment variables
-
-`.env.local` (gitignored; see `.env.example` for the placeholder shape) needs: `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY`; at least one of `GEMINI_API_KEY` / `GROQ_API_KEY` / `OPENROUTER_API_KEY` / `CEREBRAS_API_KEY` for `@savewaris/ai-battery`'s fallback chain; and `EMAIL_SERVICE` / `EMAIL_USER` / `EMAIL_APP_PASSWORD` / `EMAIL_FROM_NAME` for real cold-email sending via nodemailer.
+`scripts/sync-profile.mjs` imports Prisma directly from a sibling project at `C:\save\Projects\PersonalWebsite` and connects to that project's Neon Postgres instance to pull skills/experience/education/projects. Treat this script as environment-specific tooling.
 
 ### Path aliases & conventions
 
-- `@/*` maps to `src/*` (see `tsconfig.json`).
-- Domain modules (`src/domain/**`) are plain server-side async functions over Supabase, imported directly into Server Components (e.g. `src/app/page.tsx`) for initial data, and re-fetched from Client Components via `fetch('/api/...')` after mutations.
-- API routes under `src/app/api/**` follow a consistent `{ success: boolean, ...payload }` / `{ success: false, error }` JSON response shape.
+- `@/*` maps to `src/*` (see `tsconfig.json` and `vitest.config.mts`).
+- Pages (`src/app/**/page.tsx`) are dynamic Server Components (`export const dynamic = 'force-dynamic'`) that query domain repositories (`src/domain/*/repo.ts`) via `getDb()` and pass plain JSON props to Client Components. Client Components mutate via `fetch('/api/...')` and call `router.refresh()`.
+- API routes under `src/app/api/**` use `ok()` / `fail()` from `src/lib/http.ts` to return `{ success: true, ...payload }` or `{ success: false, error }`.
 - Styling is Tailwind, dark-theme-only (`bg-[#090d16]`, slate palette), icons from `lucide-react`.
 
 ### Git worktrees

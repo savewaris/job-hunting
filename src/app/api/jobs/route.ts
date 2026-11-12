@@ -1,30 +1,58 @@
-import { NextResponse } from 'next/server';
-import { getAllJobs, createJobFromFacebookPaste } from '@/domain/jobs';
-import { advancePipeline } from '@/domain/pipeline/runStage';
+import { getDb } from '@/lib/sql';
+import { fail, ok } from '@/lib/http';
+import { ConflictError } from '@/lib/errors';
+import { parseJobText, UNKNOWN_COMPANY } from '@/domain/jobs';
+import { createApplication } from '@/domain/applications/repo';
+import { fromScrapedJob, listScrapedJobs } from '@/domain/applications/legacy';
+import { ScrapedJob } from '@/types/job';
+
+export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
-    const jobs = await getAllJobs();
-    return NextResponse.json({ success: true, jobs });
-  } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+    const jobs = await listScrapedJobs(getDb());
+    return ok({ jobs });
+  } catch (err) {
+    console.error('[jobs:GET]', err);
+    return fail('Internal error', 500);
   }
 }
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json();
-    const { rawText, postUrl } = body;
+    let body: { rawText?: string; postUrl?: string };
+    try {
+      body = await req.json();
+    } catch {
+      return fail('Invalid JSON body', 400);
+    }
+    const { rawText, postUrl } = body ?? {};
 
-    if (!rawText) {
-      return NextResponse.json({ success: false, error: 'rawText is required' }, { status: 400 });
+    if (!rawText && !postUrl) {
+      return fail('rawText or postUrl required', 400);
     }
 
-    const job = await createJobFromFacebookPaste(rawText, postUrl || 'https://facebook.com');
-    await advancePipeline(job.id);
+    const parsed = parseJobText(rawText || '', postUrl || 'https://facebook.com');
+    const fullJob: ScrapedJob = {
+      id: parsed.id || `fb-${Date.now()}`,
+      source: 'facebook',
+      jobTitle: parsed.jobTitle || 'Software Engineer',
+      companyName: parsed.companyName || UNKNOWN_COMPANY,
+      jobUrl: postUrl || 'https://facebook.com',
+      location: parsed.location || 'Bangkok, Thailand',
+      salaryRange: parsed.salaryRange || 'Negotiable (THB)',
+      jobDescription: parsed.jobDescription || '',
+      requirements: parsed.requirements || [],
+      contactMethod: parsed.contactMethod,
+      rawPostContent: rawText || parsed.jobDescription,
+      createdAt: new Date().toISOString(),
+    };
 
-    return NextResponse.json({ success: true, job });
-  } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+    const app = await createApplication(getDb(), fromScrapedJob(fullJob));
+    return ok({ job: { ...fullJob, createdAt: app.createdAt } });
+  } catch (err) {
+    if (err instanceof ConflictError) return fail('Job already saved', 409);
+    console.error('[jobs:POST]', err);
+    return fail('Internal error', 500);
   }
 }

@@ -54,14 +54,27 @@ async function syncProfile() {
     console.log(`✓ Fetched ${projects.length} portfolio projects`);
     console.log(`✓ Fetched ${socials.length} social links`);
 
+    const websiteUrl =
+      socials.find(s => /website|portfolio/i.test(s.platform))?.url ||
+      'https://personal-website-full-stack.vercel.app';
+    const githubUrl =
+      socials.find(s => s.platform.toLowerCase() === 'github')?.url ||
+      'https://github.com/savewaris';
+    const linkedinUrl =
+      socials.find(s => s.platform.toLowerCase() === 'linkedin')?.url ||
+      'https://www.linkedin.com/in/waris-khamkaweepart/';
+
     // Build Canonical Master Profile
     const masterProfile = {
       fullName: 'Waris Khamkaweepart',
       preferredName: 'Save Waris',
       headline: 'Full Stack & AI Systems Engineer',
       email: socials.find(s => s.platform.toLowerCase() === 'gmail')?.url || 'savewaris@gmail.com',
-      phone: '+66 81 234 5678',
+      phone: '+66 95 045 7333',
       location: 'Bangkok, Thailand',
+      websiteUrl,
+      githubUrl,
+      linkedinUrl,
       summary: 'Passionate Full Stack & AI Systems Engineer with a B.Sc. in Database & Intelligence Systems from Mahidol University. Proven track record building high-performance web platforms, autonomous AI agent workflows, and data pipelines with React, Next.js, TypeScript, and Python.',
       skills: Array.from(new Set([
         ...skills.map(s => s.name),
@@ -106,10 +119,15 @@ async function syncProfile() {
         demoUrl: p.demoUrl || null,
         repoUrl: p.repoUrl || null
       })),
-      socials: socials.map(s => ({
-        platform: s.platform,
-        url: s.url
-      })),
+      socials: [
+        ...(socials.some(s => /website|portfolio/i.test(s.platform))
+          ? []
+          : [{ platform: 'Personal Website', url: websiteUrl }]),
+        ...socials.map(s => ({
+          platform: s.platform,
+          url: s.url
+        }))
+      ],
       preferences: {
         targetRoles: [
           'Full Stack Engineer',

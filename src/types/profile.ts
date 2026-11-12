@@ -43,13 +43,6 @@ export interface JobPreferences {
   minSalaryTHB?: number;
 }
 
-export interface ScreeningDefaults {
-  workAuthorization: string;
-  visaSponsorshipNeeded: boolean;
-  noticePeriod: string;
-  willingToRelocate: boolean;
-}
-
 export interface MasterProfile {
   fullName: string;
   preferredName?: string;
@@ -57,6 +50,9 @@ export interface MasterProfile {
   email: string;
   phone: string;
   location: string;
+  websiteUrl?: string;
+  githubUrl?: string;
+  linkedinUrl?: string;
   summary: string;
   skills: string[];
   detailedSkills: Skill[];
@@ -65,6 +61,5 @@ export interface MasterProfile {
   projects: Project[];
   socials: SocialLink[];
   preferences: JobPreferences;
-  screeningDefaults: ScreeningDefaults;
   syncedAt: string;
 }

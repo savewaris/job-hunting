@@ -5,33 +5,39 @@
   "scripts": {
     "dev": "next dev -H 127.0.0.1",
     "build": "next build",
-    "start": "next start",
+    "start": "next start -H 127.0.0.1",
     "lint": "next lint",
     "sync-profile": "node scripts/sync-profile.mjs",
-    "test": "vitest run"
+    "scrape:fb": "node scripts/facebook-cli.mjs",
+    "test": "vitest run",
+    "db:migrate": "tsx scripts/migrate.ts",
+    "db:import-legacy": "tsx scripts/import-legacy-jobs.ts",
+    "db:seed-dev": "tsx scripts/seed-dev.ts"
   },
   "dependencies": {
-    "@savewaris/ai-battery": "file:C:/agent-second-brain/packages/ai-battery",
     "@google/generative-ai": "^0.21.0",
     "@react-pdf/renderer": "^4.9.0",
-    "@supabase/supabase-js": "^2.45.0",
     "cheerio": "^1.0.0-rc.12",
-    "clsx": "^2.1.1",
     "lucide-react": "^0.428.0",
     "next": "^14.2.5",
     "nodemailer": "^10.0.1",
+    "pg": "^8.23.1",
+    "pg-connection-string": "^2.14.1",
+    "playwright": "^1.65.0",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "tailwind-merge": "^2.5.2"
+    "react-dom": "^18.3.1"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.15",
     "@types/node": "20.19.43",
+    "@types/pg": "^8.23.1",
     "@types/react": "18.3.31",
     "@types/react-dom": "^18.3.0",
     "autoprefixer": "^10.4.19",
     "postcss": "^8.4.39",
     "tailwindcss": "^3.4.7",
+    "tsx": "^4.23.15",
     "typescript": "5.9.3",
-    "vitest": "^3.2.7"
+    "vitest": "^4.1.12"
   }
 }

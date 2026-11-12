@@ -1,36 +1,63 @@
-import { getMasterProfile } from '@/domain/profile';
-import { getAllJobs } from '@/domain/jobs';
-import { getPipelineSettings } from '@/domain/pipeline/settings';
-import { getDraftColdEmails } from '@/domain/cold-emails';
-import ProfileView from '@/components/profile/ProfileView';
-import FacebookScraperCard from '@/components/jobs/FacebookScraperCard';
-import PipelineSettingsCard from '@/components/pipeline/PipelineSettingsCard';
-import ColdEmailQueue from '@/components/cold-emails/ColdEmailQueue';
+import { getDb } from '@/lib/sql';
+import { listApplications } from '@/domain/applications/repo';
+import { listOpenInbox } from '@/domain/inbox/repo';
+import { computeMetrics } from '@/domain/metrics/compute';
+import { getSettings } from '@/domain/settings/repo';
+import { listRecentRuns } from '@/domain/runs/repo';
+import { listTargetCompanies } from '@/domain/companies/repo';
+import RunPanel from '@/components/dashboard/RunPanel';
+import InboxPanel from '@/components/dashboard/InboxPanel';
+import CompaniesPanel from '@/components/dashboard/CompaniesPanel';
+import MetricsStrip from '@/components/dashboard/MetricsStrip';
+import Board from '@/components/dashboard/Board';
+import SettingsPanel from '@/components/dashboard/SettingsPanel';
 
 export const dynamic = 'force-dynamic';
 
-export default async function HomePage() {
-  const profile = getMasterProfile();
-  const jobs = await getAllJobs();
-  const pipelineSettings = await getPipelineSettings();
-  const draftEmails = await getDraftColdEmails();
+export default async function DashboardPage() {
+  const sql = getDb();
+  const [inbox, applications, settings, runs, companies] = await Promise.all([
+    listOpenInbox(sql),
+    listApplications(sql),
+    getSettings(sql),
+    listRecentRuns(sql, 1),
+    listTargetCompanies(sql).catch(() => []),
+  ]);
+  const metrics = computeMetrics(applications, new Date());
 
   return (
-    <main className="min-h-screen bg-[#090d16] text-slate-100 py-8">
-      <div className="max-w-5xl mx-auto px-4 sm:px-6 space-y-8">
-
-        <PipelineSettingsCard initialSettings={pipelineSettings} />
-
-        {/* Feature 1: Candidate Master Profile */}
-        <ProfileView initialProfile={profile} />
-
-        {/* Feature 2: Facebook Job Post Sourcing */}
-        <FacebookScraperCard initialJobs={jobs} />
-
-        {/* Feature 3: Cold-Email Review Queue */}
-        <ColdEmailQueue initialEmails={draftEmails} />
-
+    <main className="mx-auto w-full max-w-7xl min-w-0 space-y-6 px-4 py-6 sm:px-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold text-slate-100">Dashboard</h1>
+          <p className="mt-1 text-sm text-slate-400">Your job applications, and what needs you.</p>
+        </div>
+        <RunPanel lastRun={runs[0] ?? null} />
       </div>
+
+      <InboxPanel
+        items={inbox.map((i) => ({
+          id: i.id,
+          companyName: i.companyName,
+          jobTitle: i.jobTitle,
+          kind: i.kind,
+          prompt: i.prompt,
+          payload: i.payload,
+        }))}
+      />
+      <CompaniesPanel companies={companies} />
+      <MetricsStrip metrics={metrics} />
+      <Board
+        applications={applications.map((a) => ({
+          id: a.id,
+          companyName: a.companyName,
+          jobTitle: a.jobTitle,
+          location: a.location,
+          status: a.status,
+          needsInput: a.needsInput,
+        }))}
+      />
+      <SettingsPanel maxDailyDrafts={settings.maxDailyDrafts} scheduleEnabled={settings.scheduleEnabled} />
     </main>
   );
 }
