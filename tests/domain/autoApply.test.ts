@@ -212,6 +212,17 @@ describe('Slice C: ATS Career Form Inspector & Draft Preparation', () => {
   });
 });
 
+describe('form inspector noise', () => {
+  it('does not treat upload buttons or education/country fields as screening questions', () => {
+    const html = ['Attach', 'Enter manually', 'Country', 'School', 'Degree', 'End date month', 'End date year']
+      .map((l) => `<label>${l}</label>`)
+      .join('') + '<label>Why do you want to work at Acme?</label>';
+    expect(inspectCareerFormHtml(html).customQuestions.map((q) => q.label)).toEqual([
+      'Why do you want to work at Acme?',
+    ]);
+  });
+});
+
 describe('direct career page scan', () => {
   it('ignores navigation links like "Developers"; keeps links under /careers or /jobs', async () => {
     const html = `<a href="/developers">Developers</a><a href="/docs/react">React docs</a>

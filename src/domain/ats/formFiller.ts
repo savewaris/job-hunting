@@ -18,7 +18,7 @@ const CAPTCHA_RE =
   /\b(g-recaptcha|h-captcha|cf-turnstile|captcha|verify you are human|cloudflare turnstile)\b/i;
 
 const STANDARD_FIELD_RE =
-  /\b(first\s*name|last\s*name|full\s*name|your\s*name|email|e-mail|phone|mobile|tel|resume|cv|cover\s*letter|linkedin|github|website|portfolio|personal\s*site|location|city|address|pronouns|current\s*company)\b/i;
+  /\b(first\s*name|last\s*name|full\s*name|your\s*name|email|e-mail|phone|mobile|tel|resume|cv|cover\s*letter|linkedin|github|website|portfolio|personal\s*site|location|city|address|pronouns|current\s*company|attach|enter\s*manually|upload|country|school|university|degree|discipline|(?:start|end)\s*date|month|year)\b/i;
 
 const EEO_SKIP_RE =
   /\b(gender|race|ethnicity|veteran|hispanic|latino|disability|sexual\s*orientation|demographic)\b/i;
