@@ -1,3 +1,5 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import React from 'react';
 import { getCandidateContact, getMasterProfile } from '@/domain/profile';
 import type { MasterProfile, Project } from '@/types/profile';
@@ -7,6 +9,31 @@ export interface ResumePdfContext {
   jobTitle?: string | null;
   jobDescription?: string | null;
   requirements?: string[] | null;
+}
+
+// First match wins; the job title is checked, so "Full Stack" is listed before "Front End".
+const ROLE_RESUMES: Array<[RegExp, string]> = [
+  [/mobile|\bios\b|android|flutter|react native/i, 'waris-cv-mobile.pdf'],
+  [/data engineer|etl|data pipeline/i, 'waris-cv-dataengineer.pdf'],
+  [/data analyst|business intelligence|\bbi\b|analytics/i, 'waris-cv-dataanalyst.pdf'],
+  [/full[- ]?stack/i, 'waris-cv-fullstack.pdf'],
+  [/front[- ]?end|\bui\b/i, 'waris-cv-frontend.pdf'],
+  [/back[- ]?end|\bapi\b|server/i, 'waris-cv-backend.pdf'],
+];
+
+/**
+ * The user's own hand-made CV for this role, from RESUME_DIR, or null when the
+ * variable is unset or the file is missing (the caller then generates one).
+ */
+export function readRoleResume(jobTitle?: string | null): Buffer | null {
+  const dir = process.env.RESUME_DIR;
+  if (!dir) return null;
+  const name = ROLE_RESUMES.find(([re]) => re.test(jobTitle ?? ''))?.[1] ?? 'waris-cv.pdf';
+  try {
+    return fs.readFileSync(path.join(dir, name));
+  } catch {
+    return null;
+  }
 }
 
 const rawStyles = {
@@ -147,6 +174,8 @@ export function rankProjectsForJob(
  * Personal Website, GitHub, LinkedIn, and live project demos.
  */
 export async function generateTailoredResumePdf(ctx?: ResumePdfContext): Promise<Buffer> {
+  const own = readRoleResume(ctx?.jobTitle);
+  if (own) return own;
   const { Document, Page, Text, View, Link, StyleSheet, renderToBuffer } = await import(
     '@react-pdf/renderer'
   );

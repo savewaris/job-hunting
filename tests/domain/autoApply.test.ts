@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Sql } from '@/lib/sql';
 import { createTestDb } from '../helpers/testDb';
-import { generateTailoredResumePdf, rankProjectsForJob } from '@/domain/tailoring/resumePdf';
+import { generateTailoredResumePdf, rankProjectsForJob, readRoleResume } from '@/domain/tailoring/resumePdf';
 import { getMasterProfile } from '@/domain/profile';
 import {
   addTargetCompany,
@@ -224,5 +224,28 @@ describe('direct career page scan', () => {
     } as never);
     vi.unstubAllGlobals();
     expect(roles.map((r) => r.jobTitle)).toEqual(['Full Stack Developer']);
+  });
+});
+
+describe('own role resumes (RESUME_DIR)', () => {
+  it('picks the CV file for the job title, defaults to waris-cv.pdf, and is off when unset', async () => {
+    const fs = await import('node:fs');
+    const os = await import('node:os');
+    const path = await import('node:path');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cv-'));
+    for (const f of ['waris-cv', 'waris-cv-fullstack', 'waris-cv-frontend', 'waris-cv-dataengineer', 'waris-cv-mobile']) {
+      fs.writeFileSync(path.join(dir, `${f}.pdf`), f);
+    }
+    vi.stubEnv('RESUME_DIR', dir);
+    const pick = (t: string) => readRoleResume(t)?.toString();
+    expect(pick('Full Stack Developer')).toBe('waris-cv-fullstack');
+    expect(pick('Senior Front-End Engineer')).toBe('waris-cv-frontend');
+    expect(pick('Data Engineer')).toBe('waris-cv-dataengineer');
+    expect(pick('React Native Developer')).toBe('waris-cv-mobile');
+    expect(pick('Software Engineer')).toBe('waris-cv');
+    expect((await generateTailoredResumePdf({ jobTitle: 'Full Stack Developer' })).toString()).toBe('waris-cv-fullstack');
+    vi.stubEnv('RESUME_DIR', '');
+    expect(readRoleResume('Full Stack Developer')).toBeNull();
+    vi.unstubAllEnvs();
   });
 });
