@@ -1,6 +1,7 @@
 import * as cheerio from 'cheerio';
 import type { Sql } from '@/lib/sql';
 import { ConflictError } from '@/lib/errors';
+import { renderPage } from '@/lib/renderPage';
 import { createApplication, type ApplicationStatus } from '@/domain/applications/repo';
 import {
   listTargetCompanies,
@@ -30,7 +31,8 @@ const SENIOR_MAYBE_RE =
 const LOCATION_ALLOW_RE =
   /\b(bangkok|thailand|remote|anywhere|global|apac|asia|distributed|work from home|wfh)\b/i;
 
-const JOB_LINK_RE = /\/(jobs?|careers?|positions?|openings?|vacanc\w*)/i;
+// A job-looking path, or a numeric id segment (/development/1618-software-engineer), which nav links lack.
+const JOB_LINK_RE = /\/(jobs?|careers?|positions?|openings?|vacanc\w*)|\/\d{3,}/i;
 
 const EMAIL_RE = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/;
 
@@ -248,10 +250,32 @@ export async function fetchAshbyCompanyJobs(company: TargetCompany): Promise<Dis
  * Direct company career page parser: inspects JSON-LD `JobPosting` structured
  * data and `<a href>` links pointing to engineering roles or embedded ATS boards.
  */
+
+function titleFromSlug(href: string): string {
+  const slug = href.split(/[?#]/)[0].split('/').filter(Boolean).pop() ?? '';
+  return slug.replace(/[-_]+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()).trim();
+}
+
 export async function fetchDirectCareerPageJobs(
   company: TargetCompany,
 ): Promise<DiscoveredRole[]> {
-  const html = await fetchTextWithTimeout(company.careersUrl);
+  let roles: DiscoveredRole[] = [];
+  let fetchError: unknown = null;
+  try {
+    roles = parseDirectCareerHtml(await fetchTextWithTimeout(company.careersUrl), company);
+  } catch (err) {
+    fetchError = err;
+  }
+  if (roles.length > 0) return roles;
+  // Static HTML held no roles (client-rendered list, or the plain fetch was refused): render it.
+  const rendered = await renderPage(company.careersUrl);
+  if (rendered) return parseDirectCareerHtml(rendered, company);
+  if (fetchError) throw fetchError;
+  return roles;
+}
+
+/** Roles from a career page's JSON-LD `JobPosting` blocks and job-looking links. */
+export function parseDirectCareerHtml(html: string, company: TargetCompany): DiscoveredRole[] {
   const $ = cheerio.load(html);
   const results: DiscoveredRole[] = [];
   const seenUrls = new Set<string>();
@@ -292,8 +316,10 @@ export async function fetchDirectCareerPageJobs(
   });
 
   $('a[href]').each((_i, el) => {
-    const text = $(el).text().replace(/\s+/g, ' ').trim();
     const href = $(el).attr('href');
+    // A card link wraps title + blurb: prefer its heading, else the URL slug.
+    let text = ($(el).find('h1,h2,h3,h4,h5').first().text() || $(el).text()).replace(/\s+/g, ' ').trim();
+    if (text.length > 120 && href) text = titleFromSlug(href);
     // Nav links such as "Developers" or "React docs" match the role regex; only job-looking URLs count.
     if (!href || !text || text.length > 120 || !JOB_LINK_RE.test(href)) return;
     const status = classifyRoleStatus(text, company.locationHint ?? 'Bangkok / Remote');

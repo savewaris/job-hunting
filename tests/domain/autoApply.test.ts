@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Sql } from '@/lib/sql';
+import { renderPage } from '@/lib/renderPage';
 import { createTestDb } from '../helpers/testDb';
 import { generateTailoredResumePdf, rankProjectsForJob, readRoleResume } from '@/domain/tailoring/resumePdf';
 import { getMasterProfile } from '@/domain/profile';
@@ -23,6 +24,8 @@ let sql: Sql;
 beforeEach(async () => {
   sql = await createTestDb();
 });
+
+vi.mock('@/lib/renderPage', () => ({ renderPage: vi.fn(async () => null) }));
 
 describe('Slice A: Tailored Resume PDF Generator', () => {
   it('generates a valid non-empty PDF buffer from master-profile.json', async () => {
@@ -292,5 +295,33 @@ describe('discovery quota', () => {
     expect(out.discovered).toBe(3);
     const rows = await sql.query<{ company_name: string }>('SELECT company_name FROM job_applications ORDER BY company_name');
     expect(rows.rows.map((r) => r.company_name)).toEqual(['Co a', 'Co b', 'Co c']);
+  });
+});
+
+describe('career page rendering fallback', () => {
+  const company = { careersUrl: 'https://acme.test/jobs', name: 'Acme', locationHint: 'Bangkok' } as never;
+
+  it('takes the title from the link slug when a card link wraps a long blurb', async () => {
+    const blurb = 'x '.repeat(80);
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(`<a href="/jobs/ic4-senior-full-stack-engineer">${blurb}</a>`)));
+    const roles = await fetchDirectCareerPageJobs(company);
+    vi.unstubAllGlobals();
+    expect(roles.map((r) => r.jobTitle)).toEqual(['Ic4 Senior Full Stack Engineer']);
+  });
+
+  it('accepts job links whose URL has a numeric id even without /jobs in the path', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('<a href="/development/1618-backend-engineer">Backend Engineer</a><a href="/developers">Developers</a>')));
+    const roles = await fetchDirectCareerPageJobs(company);
+    vi.unstubAllGlobals();
+    expect(roles.map((r) => r.jobTitle)).toEqual(['Backend Engineer']);
+  });
+
+  it('renders the page with a browser when the plain HTML holds no roles', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('<div id="root"></div>')));
+    vi.mocked(renderPage).mockResolvedValueOnce('<a href="/jobs/1">Full Stack Developer</a>');
+    const roles = await fetchDirectCareerPageJobs(company);
+    vi.unstubAllGlobals();
+    expect(roles.map((r) => r.jobTitle)).toEqual(['Full Stack Developer']);
+    expect(renderPage).toHaveBeenCalledWith('https://acme.test/jobs');
   });
 });
