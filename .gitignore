@@ -44,3 +44,5 @@ next-env.d.ts
 
 # Local dev store (file-backed PGlite)
 /.dev-db/
+
+dev.log
