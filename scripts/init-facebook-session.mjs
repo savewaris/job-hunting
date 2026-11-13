@@ -29,6 +29,7 @@ async function initSession() {
   console.log(`======================================================\n`);
 
   const context = await chromium.launchPersistentContext(sessionDir, {
+    executablePath: process.env.CHROMIUM_PATH || undefined,
     headless: false,
     viewport: null,
     slowMo: 100,
