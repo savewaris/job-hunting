@@ -12,6 +12,7 @@ import {
   ensureMasterProfileLinks,
   generateMasterProfileCoverLetter,
 } from '@/domain/tailoring/coverLetter';
+import { factCheckLetter } from '@/domain/tailoring/factCheck';
 
 export const dynamic = 'force-dynamic';
 
@@ -63,6 +64,7 @@ export async function POST(
       const withLinks = ensureMasterProfileLinks(preview);
       const item = await updateApprovalPreview(sql, params.id, withLinks, {
         refinedAt: new Date().toISOString(),
+        factCheck: factCheckLetter(withLinks),
       });
       return ok({ item, usedAi: false });
     }
@@ -85,6 +87,7 @@ export async function POST(
       refinedAt: new Date().toISOString(),
       usedAi: generated.usedAi,
       embeddedLinks: generated.embeddedLinks,
+      factCheck: factCheckLetter(generated.letter),
     });
 
     return ok({

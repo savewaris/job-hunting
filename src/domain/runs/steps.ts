@@ -10,6 +10,8 @@ import type { Settings } from "@/domain/settings/repo";
 import { isPostingLive } from "@/lib/liveness";
 import { discoverFromCompanyCareers } from "@/domain/companies/discover";
 import { generateMasterProfileCoverLetter } from "@/domain/tailoring/coverLetter";
+import { scoreFit } from "@/domain/scoring/fit";
+import { factCheckLetter } from "@/domain/tailoring/factCheck";
 import { prepareCareerFormApplication } from "@/domain/ats/formFiller";
 
 export interface RunContext {
@@ -173,6 +175,8 @@ export const prepareApplicationDraftsStep: RunStep = {
               preview: coverLetter.letter,
               filledFields: formOutcome.filledFields,
               usedAi: coverLetter.usedAi,
+              fit: scoreFit({ jobTitle: job.job_title, jobDescription: job.job_description, requirements: job.requirements, location: job.location }),
+              factCheck: factCheckLetter(coverLetter.letter),
               embeddedLinks: coverLetter.embeddedLinks,
             },
           });
@@ -200,6 +204,8 @@ export const prepareApplicationDraftsStep: RunStep = {
             applyUrl: applyUrl || undefined,
             preview: coverLetter.letter,
             usedAi: coverLetter.usedAi,
+            fit: scoreFit({ jobTitle: job.job_title, jobDescription: job.job_description, requirements: job.requirements, location: job.location }),
+            factCheck: factCheckLetter(coverLetter.letter),
             embeddedLinks: coverLetter.embeddedLinks,
           },
         });
