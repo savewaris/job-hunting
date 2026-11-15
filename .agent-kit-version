@@ -1,0 +1,21 @@
+{
+  "version": 2,
+  "kitHash": "e37de8e417de09f3",
+  "files": [
+    ".agentrules/plan-first.md",
+    ".agentrules/verify-before-done.md",
+    ".agentrules/git-workflow.md",
+    ".agentrules/ask-one-question-at-a-time.md",
+    ".agentrules/terminal-and-subagent-usage.md",
+    "docs/tasks/_TEMPLATE.md",
+    "docs/tasks/_TEMPLATE-small.md",
+    "docs/backlog/_TEMPLATE.md",
+    "docs/how-we-work.md",
+    ".claude/hooks/task-file.mjs",
+    ".claude/hooks/pre-edit-gate.mjs",
+    ".claude/hooks/stop-gate.mjs",
+    ".agents/skills/grill-me/SKILL.md",
+    ".agents/INDEX.md",
+    ".agents/TOOLS.md"
+  ]
+}
