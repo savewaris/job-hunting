@@ -22,6 +22,11 @@ export interface CoverLetterResult {
   };
 }
 
+/** True when text still holds a template slot like [Date] or [Your Name]; it must never be emailed. */
+export function hasPlaceholder(text: string): boolean {
+  return /\[[A-Za-z][^\]\n]{0,40}\]/.test(text);
+}
+
 function cleanBullet(text: string): string {
   return text
     .replace(/\*\*/g, '')
@@ -229,11 +234,12 @@ STRICT REQUIREMENTS:
 1. Reference concrete facts from the Master Profile: Mahidol University B.Sc. in Database & Intelligence Systems, GISTDA Data Analyst Internship, relevant portfolio projects (such as Personal Planner, Agent Second Brain, or Hexagonal Architecture), and real technical skills.
 2. Explicitly embed the full Personal Website link (${contact.website}) and GitHub link (${contact.github}) inside the letter and/or sign-off so the employer can click them directly.
 3. Keep the tone natural, confident, and concise (around 160–220 words unless the user instruction asks otherwise).
-4. Output ONLY the cover letter text (no markdown code fences or commentary).`;
+4. Output ONLY the cover letter text (no markdown code fences or commentary).
+5. Do NOT write a date line and NEVER leave bracketed placeholders such as [Date], [Your Name] or [Company]; every value is already given above.`;
 
     const response = await model.generateContent(prompt);
     const text = response.response.text().trim();
-    if (!text) {
+    if (!text || hasPlaceholder(text)) {
       return {
         letter: buildMasterProfileCoverLetter(ctx),
         usedAi: false,
