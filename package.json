@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@google/generative-ai": "^0.21.0",
+    "@modelcontextprotocol/sdk": "^1.32.2",
     "@react-pdf/renderer": "^4.9.0",
     "cheerio": "^1.0.0-rc.12",
     "lucide-react": "^0.428.0",
