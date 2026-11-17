@@ -292,15 +292,22 @@ export async function fetchAshbyCompanyJobs(company: TargetCompany): Promise<Dis
  * data and `<a href>` links pointing to engineering roles or embedded ATS boards.
  */
 
-/** Every non-empty piece of text under `node`, in document order. */
-function textPieces($: cheerio.CheerioAPI, node: cheerio.Cheerio<any>): string[] {
+const NON_TEXT_TAGS = new Set(['svg', 'script', 'style']);
+const HEADING_TAGS = new Set(['h1', 'h2', 'h3', 'h4', 'h5']);
+
+// Places that appear on Bangkok companies' pages for roles that are NOT in Thailand.
+const FOREIGN_PLACE_RE =
+  /\b(korea|seoul|pangyo|japan|tokyo|taiwan|taipei|singapore|vietnam|hanoi|ho chi minh|indonesia|jakarta|malaysia|kuala lumpur|philippines|manila|india|china|shanghai|hong kong|australia|europe|london|berlin|usa|new york|san francisco)\b/i;
+
+/** Every non-empty piece of text under `node` in document order, skipping icons and any `skip` tags. */
+function textPieces($: cheerio.CheerioAPI, node: cheerio.Cheerio<any>, skip: Set<string> = NON_TEXT_TAGS): string[] {
   const out: string[] = [];
   const walk = (nodes: cheerio.Cheerio<any>) =>
     nodes.each((_i, n) => {
       if (n.type === 'text') {
         const t = (n.data as string).replace(/\s+/g, ' ').trim();
         if (t) out.push(t);
-      } else {
+      } else if (!skip.has(String(n.name).toLowerCase())) {
         walk($(n).contents());
       }
     });
@@ -376,19 +383,20 @@ export function parseDirectCareerHtml(html: string, company: TargetCompany): Dis
     const href = $(el).attr('href');
     // A card link wraps title + tags ("Top Priority", "Bangkok", "Permanent"): the title is the heading,
     // else the card's first piece of text; the remaining pieces are tags that may name the location.
-    const pieces = textPieces($, $(el));
-    const heading = $(el).find('h1,h2,h3,h4,h5').first().text().replace(/\s+/g, ' ').trim();
+    const heading = textPieces($, $(el).find('h1,h2,h3,h4,h5').first()).join(' ');
+    const pieces = textPieces($, $(el), heading ? new Set([...NON_TEXT_TAGS, ...HEADING_TAGS]) : NON_TEXT_TAGS);
     let text = heading || pieces[0] || '';
-    const tags = pieces.filter((p) => p !== text);
+    const tags = heading ? pieces : pieces.slice(1);
     if (text.length > 120 && href) text = titleFromSlug(href);
     // Nav links such as "Developers" or "React docs" match the role regex; only job-looking URLs count.
     if (!href || !text || text.length > 120 || !JOB_LINK_RE.test(href)) return;
-    // No tags: trust the company's location hint. Tags: use the Bangkok/Thailand one, else the tags
-    // themselves, which the location filter then rejects (e.g. a Korea-based role on a Bangkok company's page).
-    const cardLocation =
-      tags.length === 0
-        ? (company.locationHint ?? 'Bangkok / Remote')
-        : (tags.find((t) => BANGKOK_RE.test(t)) ?? tags.join(' · '));
+    // A Bangkok/Thailand tag is the location. A card that names a foreign place (title or tags) and no
+    // Thai one is dropped (location = those words, which the filter rejects). Otherwise trust the
+    // company's location hint, as before: most cards carry no location tag at all.
+    const hint = company.locationHint ?? 'Bangkok / Remote';
+    const thaiTag = tags.find((t) => BANGKOK_RE.test(t));
+    const foreign = [text, ...tags].filter((t) => FOREIGN_PLACE_RE.test(t));
+    const cardLocation = thaiTag ?? (foreign.length > 0 ? foreign.join(' · ') : hint);
     const status = classifyRoleStatus(text, cardLocation);
     if (status === 'ignore') return;
     try {

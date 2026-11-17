@@ -130,3 +130,54 @@ describe('direct career card parsing', () => {
     expect(role.location).toBe('Bangkok, Thailand');
   });
 });
+
+describe('direct career cards without a location tag keep the company hint', () => {
+  const company: TargetCompany = {
+    id: 'x',
+    name: 'Card Co',
+    careersUrl: 'https://example.com/careers',
+    atsType: 'direct_careers',
+    atsSlug: null,
+    locationHint: 'Bangkok, Thailand',
+    enabled: true,
+    lastCheckedAt: null,
+    lastFoundCount: 0,
+    lastError: null,
+    createdAt: '',
+  };
+  const one = (html: string) => parseDirectCareerHtml(html, company);
+
+  it('title plus a blurb', () => {
+    const [r] = one('<a href="/jobs/1"><h3>Frontend Developer</h3><p>Join our payments team</p></a>');
+    expect(r.jobTitle).toBe('Frontend Developer');
+    expect(r.location).toBe('Bangkok, Thailand');
+  });
+
+  it('a heading with inline markup', () => {
+    const [r] = one('<a href="/jobs/2"><h3>Full Stack <em>Engineer</em></h3></a>');
+    expect(r.jobTitle).toBe('Full Stack Engineer');
+    expect(r.location).toBe('Bangkok, Thailand');
+  });
+
+  it('a "New" badge next to the title', () => {
+    const [r] = one('<a href="/jobs/3">React Developer <span>New</span></a>');
+    expect(r.jobTitle).toBe('React Developer');
+    expect(r.location).toBe('Bangkok, Thailand');
+  });
+
+  it('an icon title inside an svg is not a tag', () => {
+    const [r] = one('<a href="/jobs/4">Backend Developer<svg><title>arrow</title></svg></a>');
+    expect(r.jobTitle).toBe('Backend Developer');
+    expect(r.location).toBe('Bangkok, Thailand');
+  });
+
+  it('still drops a card that names a foreign place', () => {
+    expect(one('<a href="/jobs/5"><div>Backend Developer</div><div>Singapore</div></a>')).toEqual([]);
+    expect(one('<a href="/jobs/6"><div>Backend Developer - Korea Based</div><div>Pangyo</div></a>')).toEqual([]);
+  });
+
+  it('a Thailand tag wins over other tags', () => {
+    const [r] = one('<a href="/jobs/7"><div>Backend Developer</div><div>Permanent</div><div>Bangkok</div></a>');
+    expect(r.location).toBe('Bangkok');
+  });
+});
