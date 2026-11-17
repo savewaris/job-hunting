@@ -17,6 +17,7 @@ npm run db:seed-dev       # tsx scripts/seed-dev.ts — seeds local DEV_DB_DIR P
 
 npm run sync-profile      # node scripts/sync-profile.mjs — pulls resume data from sibling PersonalWebsite Neon/Prisma DB into src/domain/profile/master-profile.json
 npm run scrape:fb         # node scripts/facebook-cli.mjs — standalone Playwright CLI for sourcing jobs from Facebook
+npm run mcp               # tsx src/mcp/main.ts — stdio MCP server for AI agents (8 tools, no approve/send; see docs/mcp.md)
 ```
 
 Always start the server via `npm run dev` or `npm run start` so that `-H 127.0.0.1` is passed; a bare `next dev` or `next start` binds to all network interfaces (`0.0.0.0`).
