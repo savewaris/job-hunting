@@ -167,13 +167,18 @@ export async function moveApplication(
   return toApplication(res.rows[0]);
 }
 
-/** Marks an application skipped and records the reason, atomically (single statement). */
+/**
+ * Marks an application skipped and records the reason, atomically (single statement).
+ * With `allowedFrom`, the status check is part of the same UPDATE: a job in any other status
+ * is left untouched and a ConflictError is thrown.
+ */
 export async function skipApplication(
   sql: Sql,
   id: string,
   reason: SkipReason,
   note?: string,
   now: Date = new Date(),
+  allowedFrom?: readonly ApplicationStatus[],
 ): Promise<Application> {
   if (!SKIP_REASONS.includes(reason)) throw new Error(`Invalid skip reason: ${reason}`);
   if (!UUID_RE.test(id)) throw new NotFoundError('Application not found');
@@ -183,15 +188,23 @@ export async function skipApplication(
          status = 'skipped',
          status_changed_at = $2::timestamptz,
          updated_at = $2::timestamptz
-       WHERE id = $1::uuid
+       WHERE id = $1::uuid AND ($5::text[] IS NULL OR status = ANY($5::text[]))
        RETURNING *
      ), ins AS (
        INSERT INTO skip_reasons (job_application_id, reason, note)
        SELECT id, $3::text, $4::text FROM upd
      )
      SELECT ${SELECT_COLS} FROM upd a`,
-    [id, now.toISOString(), reason, note ?? null],
+    [id, now.toISOString(), reason, note ?? null, allowedFrom ? [...allowedFrom] : null],
   );
-  if (res.rows.length === 0) throw new NotFoundError('Application not found');
+  if (res.rows.length === 0) {
+    if (allowedFrom) {
+      const exists = await sql.query('SELECT 1 FROM job_applications WHERE id = $1::uuid', [id]);
+      if (exists.rows.length > 0) {
+        throw new ConflictError(`Only ${allowedFrom.join(' or ')} jobs can be skipped; this one is in another status`);
+      }
+    }
+    throw new NotFoundError('Application not found');
+  }
   return toApplication(res.rows[0]);
 }

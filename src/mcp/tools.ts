@@ -157,7 +157,8 @@ export async function skipJob(
   if (current.rows[0].status !== 'wishlist' && current.rows[0].status !== 'maybe') {
     throw new ToolInputError(`Only wishlist or maybe jobs can be skipped (this one is ${current.rows[0].status})`);
   }
-  return summarize(await skipApplication(sql, input.id, input.reason, input.note));
+  // The same status guard is repeated inside the UPDATE, so a status change between check and write cannot slip through.
+  return summarize(await skipApplication(sql, input.id, input.reason, input.note, new Date(), ['wishlist', 'maybe']));
 }
 
 export type RunMode = 'resume_only' | 'drafts' | 'full';
@@ -169,6 +170,13 @@ export type RunMode = 'resume_only' | 'drafts' | 'full';
  */
 export async function runPipeline(sql: Sql, input: { mode?: RunMode } = {}): Promise<Run> {
   const mode = input.mode ?? 'resume_only';
+  // Drafting spends AI credits and fetches application pages named in scraped postings, so an agent
+  // (possibly steered by hostile posting text) may only do it when the human opted in on the server.
+  if (mode !== 'resume_only' && process.env.MCP_ALLOW_DRAFT_RUNS !== '1') {
+    throw new ToolInputError(
+      "Drafting and discovery runs are disabled for agents. A human must set MCP_ALLOW_DRAFT_RUNS=1 in the server's environment to allow mode 'drafts' or 'full'.",
+    );
+  }
   const steps =
     mode === 'full'
       ? fullPipelineSteps

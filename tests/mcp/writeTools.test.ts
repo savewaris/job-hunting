@@ -1,8 +1,8 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Sql } from '@/lib/sql';
 import { ConflictError, NotFoundError } from '@/lib/errors';
 import { createTestDb } from '../helpers/testDb';
-import { createApplication } from '@/domain/applications/repo';
+import { createApplication, skipApplication } from '@/domain/applications/repo';
 import { addTargetCompany } from '@/domain/companies/repo';
 import { discoverJobs, runPipeline, skipJob } from '@/mcp/tools';
 import { sendApplicationEmail } from '@/lib/mailer';
@@ -18,6 +18,8 @@ beforeEach(async () => {
   sql = await createTestDb();
   await sql.query('DELETE FROM target_companies');
 });
+
+afterEach(() => vi.unstubAllEnvs());
 
 describe('queue-only write tools', () => {
   it('discoverJobs clamps maxNewRoles to 50 and saves wishlist roles', async () => {
@@ -60,7 +62,28 @@ describe('queue-only write tools', () => {
     }
   });
 
+  it('runPipeline refuses drafts/full unless MCP_ALLOW_DRAFT_RUNS=1, and starts no run', async () => {
+    vi.stubEnv('MCP_ALLOW_DRAFT_RUNS', '');
+    await expect(runPipeline(sql, { mode: 'drafts' })).rejects.toThrow(/MCP_ALLOW_DRAFT_RUNS/);
+    await expect(runPipeline(sql, { mode: 'full' })).rejects.toThrow(/MCP_ALLOW_DRAFT_RUNS/);
+    expect((await sql.query('SELECT 1 FROM runs')).rows).toHaveLength(0);
+    expect((await runPipeline(sql)).status).toBe('succeeded');
+  });
+
+  it('skipApplication guards the status in the same statement as the update', async () => {
+    const applied = await createApplication(sql, { companyName: 'G1', jobTitle: 'Developer', status: 'applied' });
+    await expect(
+      skipApplication(sql, applied.id, 'other', undefined, new Date(), ['wishlist', 'maybe']),
+    ).rejects.toBeInstanceOf(ConflictError);
+    const row = await sql.query<{ status: string }>('SELECT status FROM job_applications WHERE id = $1::uuid', [applied.id]);
+    expect(row.rows[0].status).toBe('applied');
+    expect((await sql.query('SELECT 1 FROM skip_reasons')).rows).toHaveLength(0);
+    const open = await createApplication(sql, { companyName: 'G2', jobTitle: 'Developer', status: 'maybe' });
+    expect((await skipApplication(sql, open.id, 'other', undefined, new Date(), ['wishlist', 'maybe'])).status).toBe('skipped');
+  });
+
   it('runPipeline picks steps by mode, defaulting to resume only', async () => {
+    vi.stubEnv('MCP_ALLOW_DRAFT_RUNS', '1');
     const stepNames = async (mode?: 'resume_only' | 'drafts' | 'full') => {
       const run = await runPipeline(sql, { mode });
       return Object.keys((run.summary as { steps: Record<string, unknown> }).steps);

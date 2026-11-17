@@ -15,7 +15,7 @@ Run it: `npm run mcp` (stdio; all logs go to stderr). Connect a client with `.mc
 | `funnel_metrics` | read | applied/response/interview/offer counts and rates |
 | `discover_jobs` | writes new rows | scans the target companies' career pages, Bangkok first, max 50 new roles |
 | `skip_job` | writes | marks a **wishlist or maybe** job skipped with a reason (`too_senior`, `bad_pay`, `not_interested_company`, `wrong_location`, `other`); jobs already applied to, interviewing or at offer cannot be skipped |
-| `start_run` | writes | like the UI's run button. `mode: resume_only` (default) only picks up inbox answers you gave; `drafts` also prepares tailored applications for wishlist jobs and queues them in the inbox for approval; `full` also discovers new roles first. Sends nothing. `drafts` and `full` may use AI credits (Gemini) |
+| `start_run` | writes | like the UI's run button. `mode: resume_only` (default) only picks up inbox answers you gave; `drafts` also prepares tailored applications for wishlist jobs and queues them in the inbox for approval; `full` also discovers new roles first. Sends nothing. `drafts` and `full` use AI credits (Gemini) and fetch application pages, so they are **refused unless you set `MCP_ALLOW_DRAFT_RUNS=1`** in the server's environment (`.env.local`). Without it an agent can only run `resume_only` |
 
 Deliberately **not** exposed: resolving/approving inbox items, sending email, filling or submitting forms, changing settings, marking a job as applied. A test pins the exact tool list.
 

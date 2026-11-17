@@ -108,7 +108,7 @@ export function createMcpServer(sql: Sql): McpServer {
     'start_run',
     {
       description:
-        "Run the pipeline once, like the web UI's run button. mode 'resume_only' (default) only picks up inbox answers the human gave; 'drafts' also prepares tailored applications for wishlist jobs and queues them in the inbox for human approval; 'full' also discovers new roles first. Sends nothing. 'drafts' and 'full' may use AI credits.",
+        "Run the pipeline once, like the web UI's run button. mode 'resume_only' (default) only picks up inbox answers the human gave; 'drafts' also prepares tailored applications for wishlist jobs and queues them in the inbox for human approval; 'full' also discovers new roles first. Sends nothing. 'drafts' and 'full' may use AI credits and are refused unless the human set MCP_ALLOW_DRAFT_RUNS=1 on the server.",
       inputSchema: { mode: z.enum(['resume_only', 'drafts', 'full']).optional() },
     },
     (args) => respond(() => runPipeline(sql, args)),

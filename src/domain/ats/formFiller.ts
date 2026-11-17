@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import type { Sql } from '@/lib/sql';
+import { fetchPublicPage } from '@/lib/safeFetch';
 import { getCandidateContact, getMasterProfile } from '@/domain/profile';
 import { askOrRecall, normalizeQuestionKey } from '@/domain/answers/repo';
 import { fetchGreenhouseChoices } from './greenhouseOptions';
@@ -129,7 +130,8 @@ export async function prepareCareerFormApplication(
     try {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 6000);
-      const res = await fetch(job.applyUrl, {
+      // applyUrl comes from scraped postings: never fetch a private/internal address, even via redirect.
+      const res = await fetchPublicPage(job.applyUrl, {
         signal: controller.signal,
         headers: { 'User-Agent': 'CareerPulse-Local-Agent/1.0' },
       });
