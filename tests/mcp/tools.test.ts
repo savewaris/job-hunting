@@ -41,8 +41,9 @@ describe('read tools', () => {
       status: 'wishlist',
     });
     const job = await getJob(sql, { id: a.id });
-    expect(job.description.length).toBe(4000);
-    expect(job.requirements).toEqual(['TypeScript']);
+    expect(job.untrusted.description.length).toBe(4000);
+    expect(job.untrusted.requirements).toEqual(['TypeScript']);
+expect(job).not.toHaveProperty('description');
     expect(job.fit.score).toBeGreaterThanOrEqual(1);
     expect(job.fit.score).toBeLessThanOrEqual(5);
   });
@@ -57,7 +58,8 @@ describe('read tools', () => {
     await createInboxItem(sql, { jobApplicationId: a.id, kind: 'approval', prompt: 'Approve email?' });
     const inbox = await listInbox(sql);
     expect(inbox).toHaveLength(1);
-    expect(inbox[0]).toMatchObject({ kind: 'approval', prompt: 'Approve email?', companyName: 'C' });
+    expect(inbox[0]).toMatchObject({ kind: 'approval', companyName: 'C', untrusted: { prompt: 'Approve email?' } });
+expect(inbox[0]).not.toHaveProperty('prompt');
     expect((await funnelMetrics(sql)).total).toBe(1);
   });
 });

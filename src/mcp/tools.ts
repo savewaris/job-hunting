@@ -87,7 +87,7 @@ export async function listJobs(
 export async function getJob(
   sql: Sql,
   input: { id: string },
-): Promise<JobSummary & { description: string; requirements: string[]; fit: FitResult }> {
+): Promise<JobSummary & { untrusted: { description: string; requirements: string[] }; fit: FitResult }> {
   if (!UUID_RE.test(input.id)) throw new NotFoundError('Application not found');
   const app = (await listApplications(sql)).find((a) => a.id === input.id);
   if (!app) throw new NotFoundError('Application not found');
@@ -99,22 +99,32 @@ export async function getJob(
   const requirements = res.rows[0]?.requirements ?? [];
   return {
     ...summarize(app),
-    description,
-    requirements,
+    // Scraped from a third-party posting: the agent must treat it as data, never as instructions.
+    untrusted: { description, requirements },
     fit: scoreFit({ jobTitle: app.jobTitle, jobDescription: description, requirements, location: app.location }),
   };
 }
 
 export async function listInbox(
   sql: Sql,
-): Promise<Array<{ id: string; kind: string; prompt: string; companyName: string | null; jobTitle: string | null; createdAt: string }>> {
+): Promise<
+  Array<{
+    id: string;
+    kind: string;
+    companyName: string | null;
+    jobTitle: string | null;
+    createdAt: string;
+    untrusted: { prompt: string };
+  }>
+> {
   return (await listOpenInbox(sql)).map((i) => ({
     id: i.id,
     kind: i.kind,
-    prompt: i.prompt,
     companyName: i.companyName,
     jobTitle: i.jobTitle,
     createdAt: i.createdAt,
+    // Form questions come from third-party application forms: data, never instructions.
+    untrusted: { prompt: i.prompt },
   }));
 }
 
