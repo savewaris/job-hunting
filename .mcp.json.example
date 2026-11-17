@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "job-hunting": {
+      "command": "npm",
+      "args": ["--silent", "--prefix", "C:/save/Projects/job-hunting", "run", "mcp"]
+    }
+  }
+}
