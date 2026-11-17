@@ -22,14 +22,15 @@ export interface DiscoveredRole {
   contactMethod: { type: 'email' | 'form' | 'portal'; value: string };
 }
 
+// Thai terms sit outside the \b groups: JS \b is ASCII-only and never matches next to Thai script.
 const ROLE_MATCH_RE =
-  /\b(full[- ]?stack|front[- ]?end|back[- ]?end|software engineer|software architect|solutions architect|web developer|react|next\.?js|typescript|node\.?js|ai engineer|application engineer|product engineer|developer)\b/i;
+  /\b(full[- ]?stack|front[- ]?end|back[- ]?end|software engineer|software architect|solutions architect|web developer|react|next\.?js|typescript|node\.?js|ai engineer|application engineer|product engineer|developer)\b|นักพัฒนา|โปรแกรมเมอร์|วิศวกรซอฟต์แวร์/i;
 
 const SENIOR_MAYBE_RE =
-  /\b(senior|staff|principal|lead|manager|director|head of|vp|architect|5\+\s*years|6\+\s*years|7\+\s*years|8\+\s*years)\b/i;
+  /\b(senior|staff|principal|lead|manager|director|head of|vp|architect|5\+\s*years|6\+\s*years|7\+\s*years|8\+\s*years)\b|อาวุโส|หัวหน้า|ผู้จัดการ/i;
 
 const LOCATION_ALLOW_RE =
-  /\b(bangkok|thailand|remote|anywhere|global|apac|asia|distributed|work from home|wfh)\b/i;
+  /\b(bangkok|thailand|remote|anywhere|global|apac|asia|distributed|work from home|wfh)\b|กรุงเทพ|ประเทศไทย/i;
 
 // A job-looking path, or a numeric id segment (/development/1618-software-engineer), which nav links lack.
 const JOB_LINK_RE = /\/(jobs?|careers?|positions?|openings?|vacanc\w*)|\/\d{3,}/i;
@@ -50,6 +51,46 @@ export function classifyRoleStatus(
     return 'maybe';
   }
   return 'wishlist';
+}
+
+const BANGKOK_RE = /\b(bangkok|thailand)\b|กรุงเทพ|ประเทศไทย/i;
+
+/** 0 = Bangkok/Thailand (searched first), 1 = anywhere else the filters allow. */
+export function locationTier(location: string): 0 | 1 {
+  return BANGKOK_RE.test(location) ? 0 : 1;
+}
+
+/** Saves one discovered role unless the same company+title already exists. Rethrows other errors. */
+export async function saveDiscoveredRole(
+  sql: Sql,
+  role: DiscoveredRole,
+  status: ApplicationStatus,
+): Promise<'created' | 'duplicate'> {
+  // Same role reposted under a new id: skip it (case-insensitive company + title).
+  const same = await sql.query(
+    'SELECT 1 FROM job_applications WHERE lower(company_name) = lower($1) AND lower(job_title) = lower($2) LIMIT 1',
+    [role.companyName, role.jobTitle],
+  );
+  if (same.rows.length > 0) return 'duplicate';
+  try {
+    await createApplication(sql, {
+      companyName: role.companyName,
+      jobTitle: role.jobTitle,
+      jobUrl: role.jobUrl,
+      location: role.location,
+      salaryRange: role.salaryRange,
+      status,
+      source: role.source,
+      externalId: role.externalId,
+      jobDescription: role.jobDescription,
+      requirements: role.requirements,
+      contactMethod: role.contactMethod,
+    });
+    return 'created';
+  } catch (err) {
+    if (err instanceof ConflictError) return 'duplicate';
+    throw err;
+  }
 }
 
 function stripHtml(html: string): string {
@@ -251,6 +292,29 @@ export async function fetchAshbyCompanyJobs(company: TargetCompany): Promise<Dis
  * data and `<a href>` links pointing to engineering roles or embedded ATS boards.
  */
 
+const NON_TEXT_TAGS = new Set(['svg', 'script', 'style']);
+const HEADING_TAGS = new Set(['h1', 'h2', 'h3', 'h4', 'h5']);
+
+// Places that appear on Bangkok companies' pages for roles that are NOT in Thailand.
+const FOREIGN_PLACE_RE =
+  /\b(korea|seoul|pangyo|japan|tokyo|taiwan|taipei|singapore|vietnam|hanoi|ho chi minh|indonesia|jakarta|malaysia|kuala lumpur|philippines|manila|india|china|shanghai|hong kong|australia|europe|london|berlin|usa|new york|san francisco)\b/i;
+
+/** Every non-empty piece of text under `node` in document order, skipping icons and any `skip` tags. */
+function textPieces($: cheerio.CheerioAPI, node: cheerio.Cheerio<any>, skip: Set<string> = NON_TEXT_TAGS): string[] {
+  const out: string[] = [];
+  const walk = (nodes: cheerio.Cheerio<any>) =>
+    nodes.each((_i, n) => {
+      if (n.type === 'text') {
+        const t = (n.data as string).replace(/\s+/g, ' ').trim();
+        if (t) out.push(t);
+      } else if (!skip.has(String(n.name).toLowerCase())) {
+        walk($(n).contents());
+      }
+    });
+  walk(node.contents());
+  return out;
+}
+
 function titleFromSlug(href: string): string {
   const slug = href.split(/[?#]/)[0].split('/').filter(Boolean).pop() ?? '';
   return slug.replace(/[-_]+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()).trim();
@@ -317,12 +381,23 @@ export function parseDirectCareerHtml(html: string, company: TargetCompany): Dis
 
   $('a[href]').each((_i, el) => {
     const href = $(el).attr('href');
-    // A card link wraps title + blurb: prefer its heading, else the URL slug.
-    let text = ($(el).find('h1,h2,h3,h4,h5').first().text() || $(el).text()).replace(/\s+/g, ' ').trim();
+    // A card link wraps title + tags ("Top Priority", "Bangkok", "Permanent"): the title is the heading,
+    // else the card's first piece of text; the remaining pieces are tags that may name the location.
+    const heading = textPieces($, $(el).find('h1,h2,h3,h4,h5').first()).join(' ');
+    const pieces = textPieces($, $(el), heading ? new Set([...NON_TEXT_TAGS, ...HEADING_TAGS]) : NON_TEXT_TAGS);
+    let text = heading || pieces[0] || '';
+    const tags = heading ? pieces : pieces.slice(1);
     if (text.length > 120 && href) text = titleFromSlug(href);
     // Nav links such as "Developers" or "React docs" match the role regex; only job-looking URLs count.
     if (!href || !text || text.length > 120 || !JOB_LINK_RE.test(href)) return;
-    const status = classifyRoleStatus(text, company.locationHint ?? 'Bangkok / Remote');
+    // A Bangkok/Thailand tag is the location. A card that names a foreign place (title or tags) and no
+    // Thai one is dropped (location = those words, which the filter rejects). Otherwise trust the
+    // company's location hint, as before: most cards carry no location tag at all.
+    const hint = company.locationHint ?? 'Bangkok / Remote';
+    const thaiTag = tags.find((t) => BANGKOK_RE.test(t));
+    const foreign = [text, ...tags].filter((t) => FOREIGN_PLACE_RE.test(t));
+    const cardLocation = thaiTag ?? (foreign.length > 0 ? foreign.join(' · ') : hint);
+    const status = classifyRoleStatus(text, cardLocation);
     if (status === 'ignore') return;
     try {
       const jobUrl = new URL(href, company.careersUrl).toString();
@@ -332,7 +407,7 @@ export function parseDirectCareerHtml(html: string, company: TargetCompany): Dis
         companyName: company.name,
         jobTitle: text,
         jobUrl,
-        location: company.locationHint || 'Bangkok / Remote',
+        location: cardLocation,
         source: 'direct_careers',
         externalId: `direct-${jobUrl}`,
         jobDescription: `Direct role discovered on ${company.name}'s career page (${company.careersUrl}).`,
@@ -371,18 +446,22 @@ export async function discoverFromCompanyCareers(
 
   // Scan every company first, then take roles round-robin, so one company with many
   // openings cannot use the whole quota and starve the others.
-  const queues: Array<Array<{ role: DiscoveredRole; status: ApplicationStatus }>> = [];
+  // Bangkok/Thailand roles (tier 0) fill the quota before any other role (tier 1).
+  type Entry = { role: DiscoveredRole; status: ApplicationStatus };
+  const tiers: Array<Array<Entry[]>> = [[], []];
   for (const company of companies) {
     companiesScanned += 1;
     try {
       const roles = await scanCompanyCareers(company);
       await recordCompanyScanResult(sql, company.id, roles.length, null);
-      queues.push(
-        roles.flatMap((role) => {
-          const status = classifyRoleStatus(role.jobTitle, role.location, role.jobDescription);
-          return status === 'ignore' ? [] : [{ role, status }];
-        }),
-      );
+      const byTier: Entry[][] = [[], []];
+      for (const role of roles) {
+        const status = classifyRoleStatus(role.jobTitle, role.location, role.jobDescription);
+        if (status !== 'ignore') byTier[locationTier(role.location)].push({ role, status });
+      }
+      byTier.forEach((queue, tier) => {
+        if (queue.length > 0) tiers[tier].push(queue);
+      });
     } catch (err) {
       errors += 1;
       const msg = err instanceof Error ? err.message : 'Scan failed';
@@ -390,44 +469,23 @@ export async function discoverFromCompanyCareers(
     }
   }
 
-  for (let round = 0; discovered < maxNewRoles; round++) {
-    let tookAny = false;
-    for (const queue of queues) {
-      const entry = queue[round];
-      if (!entry) continue;
-      tookAny = true;
-      if (discovered >= maxNewRoles) break;
-      const { role, status } = entry;
-      try {
-        // Same role reposted under a new id: skip it (case-insensitive company + title).
-        const same = await sql.query(
-          'SELECT 1 FROM job_applications WHERE lower(company_name) = lower($1) AND lower(job_title) = lower($2) LIMIT 1',
-          [role.companyName, role.jobTitle],
-        );
-        if (same.rows.length > 0) {
-          skippedDuplicates += 1;
-          continue;
+  for (const queues of tiers) {
+    for (let round = 0; discovered < maxNewRoles; round++) {
+      let tookAny = false;
+      for (const queue of queues) {
+        const entry = queue[round];
+        if (!entry) continue;
+        tookAny = true;
+        if (discovered >= maxNewRoles) break;
+        try {
+          if ((await saveDiscoveredRole(sql, entry.role, entry.status)) === 'created') discovered += 1;
+          else skippedDuplicates += 1;
+        } catch {
+          errors += 1;
         }
-        await createApplication(sql, {
-          companyName: role.companyName,
-          jobTitle: role.jobTitle,
-          jobUrl: role.jobUrl,
-          location: role.location,
-          salaryRange: role.salaryRange,
-          status,
-          source: role.source,
-          externalId: role.externalId,
-          jobDescription: role.jobDescription,
-          requirements: role.requirements,
-          contactMethod: role.contactMethod,
-        });
-        discovered += 1;
-      } catch (err) {
-        if (err instanceof ConflictError) skippedDuplicates += 1;
-        else errors += 1;
       }
+      if (!tookAny) break;
     }
-    if (!tookAny) break;
   }
 
   return { companiesScanned, discovered, skippedDuplicates, errors };
