@@ -6,7 +6,8 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import type { Sql } from '@/lib/sql';
 import { createTestDb } from '../helpers/testDb';
-import { assertSafeStore, createMcpServer } from '@/mcp/server';
+import { NotFoundError } from '@/lib/errors';
+import { assertSafeStore, createMcpServer, toolErrorText } from '@/mcp/server';
 
 const ALLOWED = [
   'discover_jobs',
@@ -53,6 +54,14 @@ describe('MCP server', () => {
     expect((res as { isError?: boolean }).isError).toBe(true);
     expect(text(res)).toMatch(/not found/i);
     expect(text(res)).not.toMatch(/\bat .*\.(ts|js):\d+/);
+  });
+});
+
+describe('toolErrorText', () => {
+  it('passes through known errors and hides everything else', () => {
+    expect(toolErrorText(new NotFoundError('Application not found'))).toBe('Application not found');
+    expect(toolErrorText(new Error('password authentication failed for user "postgres.abc"'))).toBe('Tool failed (see the server log)');
+    expect(toolErrorText('weird')).toBe('Tool failed (see the server log)');
   });
 });
 

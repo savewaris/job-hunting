@@ -51,6 +51,25 @@ describe('queue-only write tools', () => {
     await expect(skipJob(sql, { id: a.id, reason: 'bogus' as never })).rejects.toThrow();
   });
 
+  it('skipJob refuses a job you already applied to or are interviewing for', async () => {
+    for (const status of ['applied', 'interviewing', 'offer'] as const) {
+      const a = await createApplication(sql, { companyName: 'P' + status, jobTitle: 'Developer', status });
+      await expect(skipJob(sql, { id: a.id, reason: 'other' })).rejects.toThrow(/wishlist or maybe/);
+      const row = await sql.query<{ status: string }>('SELECT status FROM job_applications WHERE id = $1::uuid', [a.id]);
+      expect(row.rows[0].status).toBe(status);
+    }
+  });
+
+  it('runPipeline picks steps by mode, defaulting to resume only', async () => {
+    const stepNames = async (mode?: 'resume_only' | 'drafts' | 'full') => {
+      const run = await runPipeline(sql, { mode });
+      return Object.keys((run.summary as { steps: Record<string, unknown> }).steps);
+    };
+    expect(await stepNames()).toEqual(['resumeAnsweredInbox']);
+    expect(await stepNames('drafts')).toEqual(['resumeAnsweredInbox', 'prepareApplicationDrafts']);
+    expect(await stepNames('full')).toEqual(['resumeAnsweredInbox', 'discoverCompanyCareers', 'prepareApplicationDrafts']);
+  });
+
   it('runPipeline reports a run already in progress as ConflictError', async () => {
     await sql.query(`INSERT INTO runs (status, started_at) VALUES ('running', now())`);
     await expect(runPipeline(sql)).rejects.toBeInstanceOf(ConflictError);

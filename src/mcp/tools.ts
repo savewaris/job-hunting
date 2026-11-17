@@ -16,9 +16,13 @@ import { computeMetrics, type Metrics } from '@/domain/metrics/compute';
 import { scoreFit, type FitResult } from '@/domain/scoring/fit';
 import { discoverFromCompanyCareers, locationTier } from '@/domain/companies/discover';
 import { startRun } from '@/domain/runs/orchestrator';
+import { fullPipelineSteps, prepareApplicationDraftsStep, resumeAnsweredInbox } from '@/domain/runs/steps';
 
 // Tool handlers: plain (sql, input) => result functions, so they are testable without MCP.
 // None of them approves, sends, submits a form or changes settings (see docs/mcp.md).
+
+/** Bad input from the agent: its message is safe to show back to it. */
+export class ToolInputError extends Error {}
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const DEFAULT_LIST_LIMIT = 20;
@@ -74,7 +78,7 @@ export async function listJobs(
   input: { status?: ApplicationStatus; bangkokOnly?: boolean; limit?: number } = {},
 ): Promise<JobSummary[]> {
   if (input.status !== undefined && !APPLICATION_STATUSES.includes(input.status)) {
-    throw new Error(`Invalid status: ${input.status}`);
+    throw new ToolInputError(`Invalid status: ${input.status}`);
   }
   const limit = Math.min(Math.max(Math.trunc(input.limit ?? DEFAULT_LIST_LIMIT) || DEFAULT_LIST_LIMIT, 1), MAX_LIST_LIMIT);
   return (await listApplications(sql))
@@ -145,12 +149,31 @@ export async function skipJob(
   sql: Sql,
   input: { id: string; reason: SkipReason; note?: string },
 ): Promise<JobSummary> {
-  if (!SKIP_REASONS.includes(input.reason)) throw new Error(`Invalid skip reason: ${input.reason}`);
+  if (!SKIP_REASONS.includes(input.reason)) throw new ToolInputError(`Invalid skip reason: ${input.reason}`);
   if (!UUID_RE.test(input.id)) throw new NotFoundError('Application not found');
+  // Never let an agent drop a job you already applied to: skipping loses its place in the funnel.
+  const current = await sql.query<{ status: string }>('SELECT status FROM job_applications WHERE id = $1::uuid', [input.id]);
+  if (current.rows.length === 0) throw new NotFoundError('Application not found');
+  if (current.rows[0].status !== 'wishlist' && current.rows[0].status !== 'maybe') {
+    throw new ToolInputError(`Only wishlist or maybe jobs can be skipped (this one is ${current.rows[0].status})`);
+  }
   return summarize(await skipApplication(sql, input.id, input.reason, input.note));
 }
 
-/** Runs the pipeline once: discovers roles and queues drafts for approval. Sends nothing. */
-export async function runPipeline(sql: Sql): Promise<Run> {
-  return startRun(sql);
+export type RunMode = 'resume_only' | 'drafts' | 'full';
+
+/**
+ * Runs the pipeline once, like the web UI's run button. resume_only (default) only picks up inbox
+ * answers; drafts also prepares tailored applications for wishlist jobs; full also discovers roles
+ * first. Drafting may use AI credits. Nothing is ever sent: approvals wait in the inbox.
+ */
+export async function runPipeline(sql: Sql, input: { mode?: RunMode } = {}): Promise<Run> {
+  const mode = input.mode ?? 'resume_only';
+  const steps =
+    mode === 'full'
+      ? fullPipelineSteps
+      : mode === 'drafts'
+        ? [resumeAnsweredInbox, prepareApplicationDraftsStep]
+        : undefined;
+  return startRun(sql, steps);
 }
