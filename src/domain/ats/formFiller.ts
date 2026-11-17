@@ -4,7 +4,8 @@ import os from 'node:os';
 import path from 'node:path';
 import type { Sql } from '@/lib/sql';
 import { getCandidateContact, getMasterProfile } from '@/domain/profile';
-import { askOrRecall } from '@/domain/answers/repo';
+import { askOrRecall, normalizeQuestionKey } from '@/domain/answers/repo';
+import { fetchGreenhouseChoices } from './greenhouseOptions';
 import { generateTailoredResumePdf } from '@/domain/tailoring/resumePdf';
 
 export interface FormFillOutcome {
@@ -146,10 +147,12 @@ export async function prepareCareerFormApplication(
           };
         }
 
+        const choices = await fetchGreenhouseChoices(job.applyUrl);
         for (const q of inspected.customQuestions) {
           const recall = await askOrRecall(sql, {
             jobApplicationId: job.id,
             questionText: q.label,
+            options: choices.get(normalizeQuestionKey(q.label)),
           });
           if (recall.kind === 'answered') {
             answeredQuestions[`Screening: ${q.label}`] = recall.answer;

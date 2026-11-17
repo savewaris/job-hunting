@@ -13,6 +13,7 @@ import { moveApplication } from '@/domain/applications/repo';
 import { generateTailoredResumePdf } from '@/domain/tailoring/resumePdf';
 import { ensureMasterProfileLinks } from '@/domain/tailoring/coverLetter';
 import { UNKNOWN_COMPANY } from '@/domain/jobs';
+import { factCheckLetter } from '@/domain/tailoring/factCheck';
 import { sendApplicationEmail } from '@/lib/mailer';
 import { getCandidateContact } from '@/domain/profile';
 
@@ -34,13 +35,17 @@ export async function POST(
   }
   if (!isPlainObject(body)) return fail('Request body must be a JSON object', 400);
 
-  const { decision, answer, saveToBank } = body;
+  const { decision, answer, saveToBank, acknowledgeClaims } = body;
   if (typeof decision !== 'string' || !INBOX_DECISIONS.includes(decision as InboxDecision)) {
     return fail('decision must be one of answered, approved, skipped', 400);
   }
   if (answer !== undefined && typeof answer !== 'string') return fail('answer must be a string', 400);
   if (saveToBank !== undefined && typeof saveToBank !== 'boolean') {
     return fail('saveToBank must be a boolean', 400);
+  }
+
+  if (acknowledgeClaims !== undefined && typeof acknowledgeClaims !== 'boolean') {
+    return fail('acknowledgeClaims must be a boolean', 400);
   }
 
   const sql = getDb();
@@ -91,7 +96,16 @@ export async function POST(
               item.answer ||
                 (typeof item.payload.preview === 'string' ? item.payload.preview : ''),
             );
-            const safeCompany = job.company_name.replace(/[^a-zA-Z0-9_-]+/g, '_').slice(0, 40);
+            const claims = acknowledgeClaims ? [] : factCheckLetter(coverLetter);
+            if (claims.length > 0) {
+              // Nothing was sent: give the approval back so the draft can be fixed or acknowledged.
+              await reopenApprovalItem(sql, item.id);
+              return fail(
+                `Cover letter has claims the Master Profile does not back: ${claims.join('; ')}. Edit the draft, or tick "Send anyway" to override. Nothing was sent.`,
+                422,
+              );
+            }
+            const safeCompany =job.company_name.replace(/[^a-zA-Z0-9_-]+/g, '_').slice(0, 40);
             const { fullName } = getCandidateContact();
             const safeName = fullName.replace(/[^a-zA-Z0-9_-]+/g, '_');
             const emailRes = await sendApplicationEmail({

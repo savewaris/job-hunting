@@ -154,3 +154,38 @@ describe('approving an email application', () => {
     expect((await itemRow()).status).toBe('answered'); // stays resolved: must not be re-approvable
   });
 });
+
+describe('fact check gate on email approval', () => {
+  const claimLetter = 'I have 9 years of experience with Kubernetes.';
+
+  function approveWith(body: Record<string, unknown>) {
+    return POST(
+      new Request(`http://localhost/api/inbox/${approvalId}/resolve`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ decision: 'approved', answer: claimLetter, ...body }),
+      }),
+      { params: { id: approvalId } },
+    );
+  }
+
+  it('refuses with 422, sends nothing and reopens the approval', async () => {
+    const send = vi.spyOn(mailer, 'sendApplicationEmail');
+    const res = await approveWith({});
+    expect(res.status).toBe(422);
+    expect(send).not.toHaveBeenCalled();
+    expect((await itemRow()).status).toBe('open');
+  });
+
+  it('sends when the user acknowledges the claims', async () => {
+    const send = vi.spyOn(mailer, 'sendApplicationEmail').mockResolvedValue({
+      sent: true,
+      simulated: false,
+      recipient: 'hr@acme.test',
+      messageId: '<ok@mail.test>',
+    });
+    const res = await approveWith({ acknowledgeClaims: true });
+    expect(res.status).toBe(200);
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+});

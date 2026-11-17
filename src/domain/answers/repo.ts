@@ -85,8 +85,13 @@ export async function deleteAnswer(sql: Sql, key: string): Promise<void> {
  */
 export async function askOrRecall(
   sql: Sql,
-  input: { jobApplicationId: string; questionText: string },
+  input: {
+    jobApplicationId: string;
+    questionText: string;
+    options?: { choices: string[]; multi: boolean };
+  },
 ): Promise<AskResult> {
+  const payload = JSON.stringify(input.options ? { options: input.options } : {});
   const key = requireKey(input.questionText);
   if (!UUID_RE.test(input.jobApplicationId)) throw new NotFoundError('Application not found');
 
@@ -102,12 +107,12 @@ export async function askOrRecall(
     try {
       inserted = await sql.query<{ id: string }>(
         `INSERT INTO inbox_items (job_application_id, kind, prompt, question_key, payload)
-         VALUES ($1::uuid, 'question', $2, $3, '{}'::jsonb)
+         VALUES ($1::uuid, 'question', $2, $3, $4::jsonb)
          ON CONFLICT (job_application_id, question_key)
            WHERE status = 'open' AND kind = 'question'
          DO NOTHING
          RETURNING id`,
-        [input.jobApplicationId, input.questionText, key],
+        [input.jobApplicationId, input.questionText, key, payload],
       );
     } catch (err) {
       if ((err as { code?: string }).code === '23503') {

@@ -7,6 +7,7 @@ import {
   type AtsType,
 } from '@/domain/companies/repo';
 import { discoverFromCompanyCareers } from '@/domain/companies/discover';
+import { hackerNewsCompanyNames, registerCompaniesByName } from '@/domain/companies/probe';
 
 export const dynamic = 'force-dynamic';
 
@@ -41,6 +42,25 @@ export async function POST(req: Request): Promise<Response> {
     } catch (err) {
       console.error('[companies:scan]', err);
       return fail('Failed to scan company career pages', 500);
+    }
+  }
+
+  // Find boards for many companies at once: pass `names`, or `source: 'hn'` to seed from HN "Who is hiring".
+  if (body.action === 'probe') {
+    try {
+      const names =
+        body.source === 'hn'
+          ? await hackerNewsCompanyNames()
+          : Array.isArray(body.names)
+            ? body.names.filter((n): n is string => typeof n === 'string')
+            : null;
+      if (!names) return fail('names must be an array of strings, or source must be "hn"', 400);
+      const locationHint = typeof body.locationHint === 'string' ? body.locationHint : undefined;
+      const summary = await registerCompaniesByName(getDb(), names, locationHint);
+      return ok({ summary: { checked: summary.checked, added: summary.added.length, notFound: summary.notFound.length }, added: summary.added });
+    } catch (err) {
+      console.error('[companies:probe]', err);
+      return fail('Failed to probe company boards', 500);
     }
   }
 

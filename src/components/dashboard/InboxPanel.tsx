@@ -53,6 +53,17 @@ function renderTextWithLinks(text: string) {
 function ItemCard({ item }: { item: InboxItemView }) {
   const router = useRouter();
   const [answer, setAnswer] = useState('');
+  const opts = item.payload.options as
+    | { choices?: unknown; multi?: unknown; max?: unknown }
+    | undefined;
+  const choices =
+    Array.isArray(opts?.choices) && opts.choices.every((c) => typeof c === 'string')
+      ? {
+          choices: opts.choices as string[],
+          multi: opts.multi === true,
+          max: typeof opts.max === 'number' ? opts.max : undefined,
+        }
+      : null;
   const [saveToBank, setSaveToBank] = useState(true);
   const initialPreview = typeof item.payload.preview === 'string' ? item.payload.preview : '';
   const [draft, setDraft] = useState(initialPreview);
@@ -60,6 +71,7 @@ function ItemCard({ item }: { item: InboxItemView }) {
   const [refineOpen, setRefineOpen] = useState(false);
   const [refineInstruction, setRefineInstruction] = useState('');
   const [showFilledFields, setShowFilledFields] = useState(false);
+  const [sendAnyway, setSendAnyway] = useState(false);
   const [pending, setPending] = useState(false);
   const inFlight = useRef(false);
   const [message, setMessage] = useState('');
@@ -75,6 +87,8 @@ function ItemCard({ item }: { item: InboxItemView }) {
   const recipientEmail =
     typeof item.payload.recipientEmail === 'string' ? item.payload.recipientEmail : null;
   const applyUrl = typeof item.payload.applyUrl === 'string' ? item.payload.applyUrl : null;
+  const fit = item.payload.fit as { score?: number; confidence?: string; reasons?: string[] } | undefined;
+  const claims = Array.isArray(item.payload.factCheck) ? (item.payload.factCheck as string[]) : [];
 
   async function resolve(body: Record<string, unknown>) {
     if (inFlight.current) return;
@@ -248,6 +262,11 @@ function ItemCard({ item }: { item: InboxItemView }) {
             )}
           </div>
           <p className="mt-1 break-words text-sm font-medium text-slate-100">{item.prompt}</p>
+          {typeof fit?.score === 'number' && (
+            <p className="mt-1 text-xs text-slate-400" title={(fit.reasons ?? []).join('; ')}>
+              Fit {fit.score}/5 · {fit.confidence} confidence
+            </p>
+          )}
         </div>
       </div>
 
@@ -257,14 +276,58 @@ function ItemCard({ item }: { item: InboxItemView }) {
             <label htmlFor={answerId} className="mb-1 block text-xs text-slate-400">
               Your answer
             </label>
-            <textarea
-              id={answerId}
-              rows={2}
-              value={answer}
-              onChange={(e) => setAnswer(e.target.value)}
-              disabled={pending}
-              className={INPUT}
-            />
+            {choices && !choices.multi ? (
+              <select
+                id={answerId}
+                value={answer}
+                onChange={(e) => setAnswer(e.target.value)}
+                disabled={pending}
+                className={INPUT}
+              >
+                <option value="">Select an answer…</option>
+                {choices.choices.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+            ) : choices ? (
+              <div id={answerId} className="space-y-1">
+                {choices.choices.map((c) => {
+                  const picked = answer ? answer.split(', ') : [];
+                  return (
+                    <label key={c} className="flex items-center gap-2 text-sm text-slate-300">
+                      <input
+                        type="checkbox"
+                        checked={picked.includes(c)}
+                        disabled={
+                          pending ||
+                          (!picked.includes(c) && choices.max !== undefined && picked.length >= choices.max)
+                        }
+                        onChange={(e) =>
+                          setAnswer(
+                            choices.choices
+                              .filter((x) => (x === c ? e.target.checked : picked.includes(x)))
+                              .join(', '),
+                          )
+                        }
+                        className={`h-4 w-4 rounded border-slate-600 bg-slate-900 ${FOCUS}`}
+                      />
+                      {c}
+                    </label>
+                  );
+                })}
+              </div>
+            ) : (
+              <textarea
+                id={answerId}
+                rows={2}
+                value={answer}
+                onChange={(e) => setAnswer(e.target.value)}
+                disabled={pending}
+                className={INPUT}
+              />
+            )}
           </div>
           <label className="flex min-h-[44px] items-center gap-2 text-sm text-slate-300 sm:min-h-0">
             <input
@@ -386,12 +449,35 @@ function ItemCard({ item }: { item: InboxItemView }) {
             </div>
           )}
 
+          {claims.length > 0 && (
+            <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-2 text-xs text-amber-200" role="alert">
+              <p className="font-medium">Fact check: claims not backed by your Master Profile</p>
+              <ul className="mt-1 list-disc pl-4">
+                {claims.map((c) => (
+                  <li key={c}>{c}</li>
+                ))}
+              </ul>
+              <label className="mt-2 flex min-h-[44px] items-center gap-2 sm:min-h-0">
+                <input
+                  type="checkbox"
+                  checked={sendAnyway}
+                  onChange={(e) => setSendAnyway(e.target.checked)}
+                  disabled={pending}
+                  className={`h-4 w-4 rounded border-slate-600 bg-slate-900 ${FOCUS}`}
+                />
+                Send anyway
+              </label>
+            </div>
+          )}
+
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
               className={BTN_PRIMARY}
               disabled={pending}
-              onClick={() => resolve({ decision: 'approved', answer: draft || undefined })}
+              onClick={() =>
+                resolve({ decision: 'approved', answer: draft || undefined, acknowledgeClaims: sendAnyway })
+              }
             >
               Approve
             </button>
