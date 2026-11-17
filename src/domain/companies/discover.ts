@@ -53,6 +53,46 @@ export function classifyRoleStatus(
   return 'wishlist';
 }
 
+const BANGKOK_RE = /\b(bangkok|thailand)\b|กรุงเทพ|ประเทศไทย/i;
+
+/** 0 = Bangkok/Thailand (searched first), 1 = anywhere else the filters allow. */
+export function locationTier(location: string): 0 | 1 {
+  return BANGKOK_RE.test(location) ? 0 : 1;
+}
+
+/** Saves one discovered role unless the same company+title already exists. Rethrows other errors. */
+export async function saveDiscoveredRole(
+  sql: Sql,
+  role: DiscoveredRole,
+  status: ApplicationStatus,
+): Promise<'created' | 'duplicate'> {
+  // Same role reposted under a new id: skip it (case-insensitive company + title).
+  const same = await sql.query(
+    'SELECT 1 FROM job_applications WHERE lower(company_name) = lower($1) AND lower(job_title) = lower($2) LIMIT 1',
+    [role.companyName, role.jobTitle],
+  );
+  if (same.rows.length > 0) return 'duplicate';
+  try {
+    await createApplication(sql, {
+      companyName: role.companyName,
+      jobTitle: role.jobTitle,
+      jobUrl: role.jobUrl,
+      location: role.location,
+      salaryRange: role.salaryRange,
+      status,
+      source: role.source,
+      externalId: role.externalId,
+      jobDescription: role.jobDescription,
+      requirements: role.requirements,
+      contactMethod: role.contactMethod,
+    });
+    return 'created';
+  } catch (err) {
+    if (err instanceof ConflictError) return 'duplicate';
+    throw err;
+  }
+}
+
 function stripHtml(html: string): string {
   const $ = cheerio.load(html || '');
   return $.text().replace(/\s+/g, ' ').trim();
@@ -372,18 +412,22 @@ export async function discoverFromCompanyCareers(
 
   // Scan every company first, then take roles round-robin, so one company with many
   // openings cannot use the whole quota and starve the others.
-  const queues: Array<Array<{ role: DiscoveredRole; status: ApplicationStatus }>> = [];
+  // Bangkok/Thailand roles (tier 0) fill the quota before any other role (tier 1).
+  type Entry = { role: DiscoveredRole; status: ApplicationStatus };
+  const tiers: Array<Array<Entry[]>> = [[], []];
   for (const company of companies) {
     companiesScanned += 1;
     try {
       const roles = await scanCompanyCareers(company);
       await recordCompanyScanResult(sql, company.id, roles.length, null);
-      queues.push(
-        roles.flatMap((role) => {
-          const status = classifyRoleStatus(role.jobTitle, role.location, role.jobDescription);
-          return status === 'ignore' ? [] : [{ role, status }];
-        }),
-      );
+      const byTier: Entry[][] = [[], []];
+      for (const role of roles) {
+        const status = classifyRoleStatus(role.jobTitle, role.location, role.jobDescription);
+        if (status !== 'ignore') byTier[locationTier(role.location)].push({ role, status });
+      }
+      byTier.forEach((queue, tier) => {
+        if (queue.length > 0) tiers[tier].push(queue);
+      });
     } catch (err) {
       errors += 1;
       const msg = err instanceof Error ? err.message : 'Scan failed';
@@ -391,44 +435,23 @@ export async function discoverFromCompanyCareers(
     }
   }
 
-  for (let round = 0; discovered < maxNewRoles; round++) {
-    let tookAny = false;
-    for (const queue of queues) {
-      const entry = queue[round];
-      if (!entry) continue;
-      tookAny = true;
-      if (discovered >= maxNewRoles) break;
-      const { role, status } = entry;
-      try {
-        // Same role reposted under a new id: skip it (case-insensitive company + title).
-        const same = await sql.query(
-          'SELECT 1 FROM job_applications WHERE lower(company_name) = lower($1) AND lower(job_title) = lower($2) LIMIT 1',
-          [role.companyName, role.jobTitle],
-        );
-        if (same.rows.length > 0) {
-          skippedDuplicates += 1;
-          continue;
+  for (const queues of tiers) {
+    for (let round = 0; discovered < maxNewRoles; round++) {
+      let tookAny = false;
+      for (const queue of queues) {
+        const entry = queue[round];
+        if (!entry) continue;
+        tookAny = true;
+        if (discovered >= maxNewRoles) break;
+        try {
+          if ((await saveDiscoveredRole(sql, entry.role, entry.status)) === 'created') discovered += 1;
+          else skippedDuplicates += 1;
+        } catch {
+          errors += 1;
         }
-        await createApplication(sql, {
-          companyName: role.companyName,
-          jobTitle: role.jobTitle,
-          jobUrl: role.jobUrl,
-          location: role.location,
-          salaryRange: role.salaryRange,
-          status,
-          source: role.source,
-          externalId: role.externalId,
-          jobDescription: role.jobDescription,
-          requirements: role.requirements,
-          contactMethod: role.contactMethod,
-        });
-        discovered += 1;
-      } catch (err) {
-        if (err instanceof ConflictError) skippedDuplicates += 1;
-        else errors += 1;
       }
+      if (!tookAny) break;
     }
-    if (!tookAny) break;
   }
 
   return { companiesScanned, discovered, skippedDuplicates, errors };
