@@ -292,6 +292,22 @@ export async function fetchAshbyCompanyJobs(company: TargetCompany): Promise<Dis
  * data and `<a href>` links pointing to engineering roles or embedded ATS boards.
  */
 
+/** Every non-empty piece of text under `node`, in document order. */
+function textPieces($: cheerio.CheerioAPI, node: cheerio.Cheerio<any>): string[] {
+  const out: string[] = [];
+  const walk = (nodes: cheerio.Cheerio<any>) =>
+    nodes.each((_i, n) => {
+      if (n.type === 'text') {
+        const t = (n.data as string).replace(/\s+/g, ' ').trim();
+        if (t) out.push(t);
+      } else {
+        walk($(n).contents());
+      }
+    });
+  walk(node.contents());
+  return out;
+}
+
 function titleFromSlug(href: string): string {
   const slug = href.split(/[?#]/)[0].split('/').filter(Boolean).pop() ?? '';
   return slug.replace(/[-_]+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()).trim();
@@ -358,12 +374,22 @@ export function parseDirectCareerHtml(html: string, company: TargetCompany): Dis
 
   $('a[href]').each((_i, el) => {
     const href = $(el).attr('href');
-    // A card link wraps title + blurb: prefer its heading, else the URL slug.
-    let text = ($(el).find('h1,h2,h3,h4,h5').first().text() || $(el).text()).replace(/\s+/g, ' ').trim();
+    // A card link wraps title + tags ("Top Priority", "Bangkok", "Permanent"): the title is the heading,
+    // else the card's first piece of text; the remaining pieces are tags that may name the location.
+    const pieces = textPieces($, $(el));
+    const heading = $(el).find('h1,h2,h3,h4,h5').first().text().replace(/\s+/g, ' ').trim();
+    let text = heading || pieces[0] || '';
+    const tags = pieces.filter((p) => p !== text);
     if (text.length > 120 && href) text = titleFromSlug(href);
     // Nav links such as "Developers" or "React docs" match the role regex; only job-looking URLs count.
     if (!href || !text || text.length > 120 || !JOB_LINK_RE.test(href)) return;
-    const status = classifyRoleStatus(text, company.locationHint ?? 'Bangkok / Remote');
+    // No tags: trust the company's location hint. Tags: use the Bangkok/Thailand one, else the tags
+    // themselves, which the location filter then rejects (e.g. a Korea-based role on a Bangkok company's page).
+    const cardLocation =
+      tags.length === 0
+        ? (company.locationHint ?? 'Bangkok / Remote')
+        : (tags.find((t) => BANGKOK_RE.test(t)) ?? tags.join(' · '));
+    const status = classifyRoleStatus(text, cardLocation);
     if (status === 'ignore') return;
     try {
       const jobUrl = new URL(href, company.careersUrl).toString();
@@ -373,7 +399,7 @@ export function parseDirectCareerHtml(html: string, company: TargetCompany): Dis
         companyName: company.name,
         jobTitle: text,
         jobUrl,
-        location: company.locationHint || 'Bangkok / Remote',
+        location: cardLocation,
         source: 'direct_careers',
         externalId: `direct-${jobUrl}`,
         jobDescription: `Direct role discovered on ${company.name}'s career page (${company.careersUrl}).`,

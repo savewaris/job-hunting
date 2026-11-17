@@ -1,11 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Sql } from '@/lib/sql';
 import { createTestDb } from '../helpers/testDb';
-import { addTargetCompany } from '@/domain/companies/repo';
+import { addTargetCompany, type TargetCompany } from '@/domain/companies/repo';
 import {
   classifyRoleStatus,
   discoverFromCompanyCareers,
   locationTier,
+  parseDirectCareerHtml,
   saveDiscoveredRole,
   type DiscoveredRole,
 } from '@/domain/companies/discover';
@@ -83,5 +84,49 @@ describe('Bangkok-first discovery', () => {
     };
     expect(await saveDiscoveredRole(sql, role, 'wishlist')).toBe('created');
     expect(await saveDiscoveredRole(sql, { ...role, externalId: 'dup-2' }, 'wishlist')).toBe('duplicate');
+  });
+});
+
+describe('direct career card parsing', () => {
+  const company: TargetCompany = {
+    id: 'x',
+    name: 'Card Co',
+    careersUrl: 'https://example.com/careers',
+    atsType: 'direct_careers',
+    atsSlug: null,
+    locationHint: 'Bangkok, Thailand',
+    enabled: true,
+    lastCheckedAt: null,
+    lastFoundCount: 0,
+    lastError: null,
+    createdAt: '',
+  };
+
+  it('takes the card title only, and the Bangkok tag as location', () => {
+    const html = `<a href="/development/1726-software-engineer-full-stack-vuejs"><div><span title="x">Senior Software Engineer, Fullstack (Vue.js, Python)</span><div><div>Top Priority</div></div><div>LINE MAN</div><div>Bangkok</div><div>Permanent</div></div></a>`;
+    const [role] = parseDirectCareerHtml(html, company);
+    expect(role.jobTitle).toBe('Senior Software Engineer, Fullstack (Vue.js, Python)');
+    expect(role.location).toBe('Bangkok');
+  });
+
+  it('drops a card whose tags name no allowed location (Korea-based role)', () => {
+    const html = `<a href="/development/1618-software-engineer-backend-java-lp"><div><span>Senior Software Engineer, Backend (Java) - Korea Based</span><div>LINE Pay</div><div>Pangyo</div><div>Permanent</div></div></a>`;
+    expect(parseDirectCareerHtml(html, company)).toEqual([]);
+  });
+
+  it('handles an empty overlay link plus a titled card for the same job (one result)', () => {
+    const html = `<a class="box-container-link" href="/en/jobs/position/backend-engineer"></a>
+      <a class="box-container-link" href="/en/jobs/position/backend-engineer"><div class="box__title">Backend Engineer - Building Affordable Solutions for Thai SMEs</div><div><span>Bangkok</span><span>Full-Time</span><span>Product Team</span></div></a>`;
+    const roles = parseDirectCareerHtml(html, { ...company, careersUrl: 'https://example.com/en/jobs' });
+    expect(roles).toHaveLength(1);
+    expect(roles[0].jobTitle).toBe('Backend Engineer - Building Affordable Solutions for Thai SMEs');
+    expect(roles[0].location).toBe('Bangkok');
+  });
+
+  it('keeps the company location hint when the link holds only a title', () => {
+    const html = `<a href="/jobs/123-full-stack-developer">Full Stack Developer</a>`;
+    const [role] = parseDirectCareerHtml(html, company);
+    expect(role.jobTitle).toBe('Full Stack Developer');
+    expect(role.location).toBe('Bangkok, Thailand');
   });
 });
