@@ -3,15 +3,19 @@ import { NotFoundError } from '@/lib/errors';
 import {
   APPLICATION_STATUSES,
   listApplications,
+  skipApplication,
+  SKIP_REASONS,
   type Application,
   type ApplicationStatus,
+  type SkipReason,
 } from '@/domain/applications/repo';
 import { getSettings, type Settings } from '@/domain/settings/repo';
 import { listOpenInbox } from '@/domain/inbox/repo';
 import { listRecentRuns, type Run } from '@/domain/runs/repo';
 import { computeMetrics, type Metrics } from '@/domain/metrics/compute';
 import { scoreFit, type FitResult } from '@/domain/scoring/fit';
-import { locationTier } from '@/domain/companies/discover';
+import { discoverFromCompanyCareers, locationTier } from '@/domain/companies/discover';
+import { startRun } from '@/domain/runs/orchestrator';
 
 // Tool handlers: plain (sql, input) => result functions, so they are testable without MCP.
 // None of them approves, sends, submits a form or changes settings (see docs/mcp.md).
@@ -116,4 +120,27 @@ export async function listInbox(
 
 export async function funnelMetrics(sql: Sql): Promise<Metrics> {
   return computeMetrics(await listApplications(sql), new Date());
+}
+
+const DEFAULT_DISCOVER = 15;
+const MAX_DISCOVER = 50;
+
+/** Scans the enabled company career pages and saves new matching roles (Bangkok first). */
+export async function discoverJobs(sql: Sql, input: { maxNewRoles?: number } = {}) {
+  const n = Math.min(Math.max(Math.trunc(input.maxNewRoles ?? DEFAULT_DISCOVER) || DEFAULT_DISCOVER, 1), MAX_DISCOVER);
+  return discoverFromCompanyCareers(sql, n);
+}
+
+export async function skipJob(
+  sql: Sql,
+  input: { id: string; reason: SkipReason; note?: string },
+): Promise<JobSummary> {
+  if (!SKIP_REASONS.includes(input.reason)) throw new Error(`Invalid skip reason: ${input.reason}`);
+  if (!UUID_RE.test(input.id)) throw new NotFoundError('Application not found');
+  return summarize(await skipApplication(sql, input.id, input.reason, input.note));
+}
+
+/** Runs the pipeline once: discovers roles and queues drafts for approval. Sends nothing. */
+export async function runPipeline(sql: Sql): Promise<Run> {
+  return startRun(sql);
 }
