@@ -22,14 +22,15 @@ export interface DiscoveredRole {
   contactMethod: { type: 'email' | 'form' | 'portal'; value: string };
 }
 
+// Thai terms sit outside the \b groups: JS \b is ASCII-only and never matches next to Thai script.
 const ROLE_MATCH_RE =
-  /\b(full[- ]?stack|front[- ]?end|back[- ]?end|software engineer|software architect|solutions architect|web developer|react|next\.?js|typescript|node\.?js|ai engineer|application engineer|product engineer|developer)\b/i;
+  /\b(full[- ]?stack|front[- ]?end|back[- ]?end|software engineer|software architect|solutions architect|web developer|react|next\.?js|typescript|node\.?js|ai engineer|application engineer|product engineer|developer)\b|นักพัฒนา|โปรแกรมเมอร์|วิศวกรซอฟต์แวร์/i;
 
 const SENIOR_MAYBE_RE =
-  /\b(senior|staff|principal|lead|manager|director|head of|vp|architect|5\+\s*years|6\+\s*years|7\+\s*years|8\+\s*years)\b/i;
+  /\b(senior|staff|principal|lead|manager|director|head of|vp|architect|5\+\s*years|6\+\s*years|7\+\s*years|8\+\s*years)\b|อาวุโส|หัวหน้า|ผู้จัดการ/i;
 
 const LOCATION_ALLOW_RE =
-  /\b(bangkok|thailand|remote|anywhere|global|apac|asia|distributed|work from home|wfh)\b/i;
+  /\b(bangkok|thailand|remote|anywhere|global|apac|asia|distributed|work from home|wfh)\b|กรุงเทพ|ประเทศไทย/i;
 
 // A job-looking path, or a numeric id segment (/development/1618-software-engineer), which nav links lack.
 const JOB_LINK_RE = /\/(jobs?|careers?|positions?|openings?|vacanc\w*)|\/\d{3,}/i;
